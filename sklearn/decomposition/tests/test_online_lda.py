@@ -1,5 +1,6 @@
 import numpy as np
-import scipy.sparse as sp
+from scipy.sparse import csr_matrix
+from scipy.linalg import block_diag
 from sklearn.decomposition import OnlineLDA
 
 from sklearn.utils.testing import assert_true
@@ -17,7 +18,9 @@ def _build_sparse_mtx():
     n_topics = 3
     alpha0 = eta0 = 1. / n_topics
     block = n_topics * np.ones((3, 3))
-    X = sp.block_diag([block] * n_topics).tocsr()
+    blocks = [block] * n_topics
+    X = block_diag(*blocks)
+    X = csr_matrix(X)
     return n_topics, alpha0, eta0, X
 
 

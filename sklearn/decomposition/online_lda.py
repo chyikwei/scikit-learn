@@ -138,6 +138,9 @@ class OnlineLDA(BaseEstimator, TransformerMixin):
     mean_change_tol: float, optional (default: 1e-3)
         Tolerance value used in e-step break conditions.
 
+    max_gamma_update_iter: int (default: 100)
+        Max number of iterations for updating gamma values.
+
     n_jobs: int, optional (default: 1)
         Number of parallel jobs to run on e-step. -1 for autodetect.
 
@@ -162,7 +165,7 @@ class OnlineLDA(BaseEstimator, TransformerMixin):
     def __init__(self, n_topics=10, alpha=.1, eta=.1, kappa=.7, tau=1000.,
                  batch_size=128, n_docs=1e6, normalize_doc=True,
                  e_step_tol=1e-3, prex_tol=1e-1, mean_change_tol=1e-3,
-                 n_jobs=1, verbose=0, random_state=None):
+                 max_gamma_update_iter=100, n_jobs=1, verbose=0, random_state=None):
         self.n_topics = n_topics
         self.alpha = alpha
         self.eta = eta
@@ -174,6 +177,7 @@ class OnlineLDA(BaseEstimator, TransformerMixin):
         self.e_step_tol = e_step_tol
         self.prex_tol = prex_tol
         self.mean_change_tol = mean_change_tol
+        self.max_gamma_update_iter = max_gamma_update_iter
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
@@ -207,7 +211,7 @@ class OnlineLDA(BaseEstimator, TransformerMixin):
         results = Parallel(n_jobs=n_jobs, verbose=self.verbose)(
             delayed(_update_gamma)
             (X[idx_slice, :], self.expElogbeta, self.alpha,
-             self.rng, 100, self.mean_change_tol, cal_delta)
+             self.rng, self.max_gamma_update_iter, self.mean_change_tol, cal_delta)
             for idx_slice in gen_even_slices(X.shape[0], n_jobs))
 
         # merge result
@@ -456,17 +460,18 @@ class OnlineLDA(BaseEstimator, TransformerMixin):
         for d in xrange(0, n_docs):
             ids = X_indices[X_indptr[d]:X_indptr[d + 1]]
             cnts = X_data[X_indptr[d]:X_indptr[d + 1]]
-            phinorm = np.zeros(len(ids))
-            for i in xrange(0, len(ids)):
+            id_length = len(ids)
+            phinorm = np.zeros(id_length)
+            for i in xrange(0, id_length):
                 temp = Elogtheta[d, :] + self.Elogbeta[:, ids[i]]
-                tmax = max(temp)
-                phinorm[i] = np.log(sum(np.exp(temp - tmax))) + tmax
+                tmax = temp.max()
+                phinorm[i] = np.log(np.sum(np.exp(temp - tmax))) + tmax
             score += np.sum(cnts * phinorm)
 
         # E[log p(theta | alpha) - log q(theta | gamma)]
         score += np.sum((self.alpha - gamma) * Elogtheta)
         score += np.sum(gammaln(gamma) - gammaln(self.alpha))
-        score += sum(
+        score += np.sum(
             gammaln(self.alpha * self.n_topics) - gammaln(np.sum(gamma, 1)))
 
         # Compensate for the subsampling of the population of documents

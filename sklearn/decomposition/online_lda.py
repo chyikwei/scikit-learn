@@ -17,7 +17,9 @@ from scipy.special import gammaln, psi
 
 from ..base import BaseEstimator, TransformerMixin
 from ..utils import (check_random_state, check_array,
-                           gen_batches, gen_even_slices)
+                     gen_batches, gen_even_slices)
+from ..utils.validation import NotFittedError
+
 from ..externals.joblib import Parallel, delayed, cpu_count
 from ..externals.six.moves import xrange
 
@@ -412,7 +414,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         n_docs, n_vocabs = X.shape
 
         if not hasattr(self, 'components_'):
-            raise AttributeError(
+            raise NotFittedError(
                 "no 'components_' attr in model. Please fit model first.")
         # make sure vocabulary size is the same in fitted model and new doc
         # matrix

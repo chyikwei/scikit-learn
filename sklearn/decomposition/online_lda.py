@@ -23,7 +23,7 @@ from ..utils.validation import NotFittedError
 from ..externals.joblib import Parallel, delayed, cpu_count
 from ..externals.six.moves import xrange
 
-from _online_lda import (mean_change, _dirichlet_expectation_1d,
+from ._online_lda import (mean_change, _dirichlet_expectation_1d,
                          _dirichlet_expectation_2d)
 
 

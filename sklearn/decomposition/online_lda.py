@@ -13,7 +13,7 @@ Link: http://www.cs.princeton.edu/~mdhoffma/code/onlineldavb.tar
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.special import gammaln, psi
+from scipy.special import gammaln
 
 from ..base import BaseEstimator, TransformerMixin
 from ..utils import (check_random_state, check_array,
@@ -23,14 +23,19 @@ from ..utils.validation import NotFittedError
 from ..externals.joblib import Parallel, delayed, cpu_count
 from ..externals.six.moves import xrange
 
+from _online_lda import (mean_change, _dirichlet_expectation_1d,
+                         _dirichlet_expectation_2d)
+
 
 def _dirichlet_expectation(alpha):
     """
     For a vector theta ~ Dir(alpha), computes E[log(theta)] given alpha.
     """
-    if (len(alpha.shape) == 1):
-        return(psi(alpha) - psi(np.sum(alpha)))
-    return(psi(alpha) - psi(np.sum(alpha, 1))[:, np.newaxis])
+    if len(alpha.shape) == 1:
+        ret = _dirichlet_expectation_1d(alpha)
+    else:
+        ret = _dirichlet_expectation_2d(alpha)
+    return ret
 
 
 def _update_gamma(X, expElogbeta, alpha, rng, max_iters,
@@ -73,7 +78,7 @@ def _update_gamma(X, expElogbeta, alpha, rng, max_iters,
             expElogthetad = np.exp(_dirichlet_expectation(gammad))
             phinorm = np.dot(expElogthetad, expElogbetad) + 1e-100
 
-            meanchange = np.mean(abs(gammad - lastgamma))
+            meanchange = mean_change(lastgamma, gammad)
             if (meanchange < mean_change_tol):
                 break
         gamma[d, :] = gammad

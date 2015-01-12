@@ -19,7 +19,7 @@ example.
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.externals.six.moves import xrange
-from sklearn.decomposition import OnlineLDA
+from sklearn.decomposition import LatentDirichletAllocation
 
 
 def online_lda_example():
@@ -51,8 +51,9 @@ def online_lda_example():
     vectorizer = CountVectorizer(
         max_df=0.8, max_features=n_features, min_df=3, stop_words='english')
 
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta, kappa=0.7,
-                    tau=512., n_jobs=-1, n_docs=1e4, random_state=0, verbose=0)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    kappa=0.7, tau=512., n_jobs=-1, n_docs=1e4,\
+                                    random_state=0, verbose=0)
 
     for chunk_no, doc_list in enumerate(chunks(dataset.data, chunk_size)):
         if chunk_no == 0:

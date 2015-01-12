@@ -83,7 +83,7 @@ def _update_gamma(X, expElogbeta, alpha, rng, max_iters,
     return (gamma, delta_component)
 
 
-class OnlineLDA(BaseEstimator, TransformerMixin):
+class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     """
     Online Latent Dirichlet Allocation implementation with variational inference

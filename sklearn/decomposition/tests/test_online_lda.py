@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.linalg import block_diag
-from sklearn.decomposition import OnlineLDA
+from sklearn.decomposition import LatentDirichletAllocation
 
 from sklearn.utils.testing import assert_true
 from sklearn.utils.testing import raises
@@ -30,8 +30,8 @@ def test_lda_batch():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    random_state=rng)
     lda.fit(X)
 
     correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
@@ -47,8 +47,8 @@ def test_lda_online():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    tau=30., random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    tau=30., random_state=rng)
 
     for i in xrange(3):
         lda.partial_fit(X)
@@ -68,8 +68,8 @@ def test_lda_dense_input():
     X = rng.randint(5, size=(20, 10))
     n_topics = 3
     alpha0 = eta0 = 1. / n_topics
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha0, eta=eta0,
-                    random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0, eta=eta0,
+                                    random_state=rng)
 
     X_trans = lda.fit_transform(X)
     assert_true((X_trans > 0.0).any())
@@ -82,8 +82,8 @@ def test_lda_fit_transform():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    random_state=rng)
     X_fit = lda.fit_transform(X)
     X_trans = lda.transform(X)
     assert_array_almost_equal(X_fit, X_trans, 4)
@@ -95,8 +95,8 @@ def test_lda_normalize_docs():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    random_state=rng)
     X_fit = lda.fit_transform(X)
     assert_array_almost_equal(X_fit.sum(axis=1), np.ones(X.shape[0]))
 
@@ -113,8 +113,8 @@ def test_lda_partial_fit_dim_mismatch():
     n_col = rng.randint(6, 10)
     X_1 = np.random.randint(4, size=(10, n_col))
     X_2 = np.random.randint(4, size=(10, n_col + 1))
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha0, eta=eta0,
-                    tau=5., n_docs=20, random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0, eta=eta0,
+                                    tau=5., n_docs=20, random_state=rng)
     for X in [X_1, X_2]:
         lda.partial_fit(X)
 
@@ -126,7 +126,7 @@ def test_lda_transform_before_fit():
     """
     rng = np.random.RandomState(0)
     X = rng.randint(4, size=(20, 10))
-    lda = OnlineLDA()
+    lda = LatentDirichletAllocation()
     lda.transform(X)
 
 
@@ -141,8 +141,8 @@ def test_lda_transform_mismatch():
 
     n_topics = rng.randint(3, 6)
     alpha0 = eta0 = 1. / n_topics
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha0,
-                    eta=eta0, random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0,
+                                    eta=eta0, random_state=rng)
     lda.partial_fit(X)
     lda.transform(X_2)
 
@@ -154,8 +154,8 @@ def test_lda_multi_jobs():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    n_jobs=3, random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    n_jobs=3, random_state=rng)
     lda.fit(X)
 
     correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
@@ -171,8 +171,8 @@ def test_lda_online_multi_jobs():
     """
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                    n_jobs=2, tau=5., n_docs=30, random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    n_jobs=2, tau=5., n_docs=30, random_state=rng)
 
     for i in xrange(3):
         lda.partial_fit(X)
@@ -189,10 +189,10 @@ def test_lda_preplexity():
     preplexity should be lower after each iteration
     """
     n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda_1 = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                      random_state=0)
-    lda_2 = OnlineLDA(n_topics=n_topics, alpha=alpha, eta=eta,
-                      random_state=0)
+    lda_1 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                      random_state=0)
+    lda_2 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                      random_state=0)
 
     distr_1 = lda_1.fit_transform(X, max_iters=1)
     prep_1 = lda_1.preplexity(X, distr_1, sub_sampling=False)

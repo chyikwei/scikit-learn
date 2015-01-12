@@ -316,7 +316,10 @@ class IsotonicRegression(BaseEstimator, TransformerMixin, RegressorMixin):
                              .format(self.out_of_bounds))
 
         if self.out_of_bounds == "clip":
-            T = np.clip(T, self.X_min_, self.X_max_)
+            # XXX: Address scipy issue 4304 by adding a tiny value to 
+            # self.X_min_ during clipping
+            T = np.clip(T, self.X_min_ + np.finfo(float).resolution,
+                        self.X_max_)
         return self.f_(T)
 
     def fit_transform(self, X, y, sample_weight=None):
@@ -371,3 +374,19 @@ class IsotonicRegression(BaseEstimator, TransformerMixin, RegressorMixin):
             Transformed data.
         """
         return self.transform(T)
+
+    def __getstate__(self):
+        """Pickle-protocol - return state of the estimator. """
+        # copy __dict__
+        state = dict(self.__dict__)
+        # remove interpolation method
+        state.pop('f_', None)
+        return state
+
+    def __setstate__(self, state):
+        """Pickle-protocol - set state of the estimator.
+
+        We need to rebuild the interpolation function.
+        """
+        self.__dict__.update(state)
+        self._build_f(self.X_, self.y_)

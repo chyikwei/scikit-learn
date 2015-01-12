@@ -10,13 +10,12 @@ from sklearn.utils.testing import assert_array_equal
 from sklearn.utils.testing import assert_greater
 from sklearn.utils.testing import assert_raises
 from sklearn.utils.testing import assert_raise_message
-from sklearn.utils.testing import assert_warns_message
 from sklearn.utils.testing import ignore_warnings
 
 from sklearn import datasets
 from sklearn.metrics import mean_squared_error
-from sklearn.metrics.scorer import SCORERS
 from sklearn.metrics import make_scorer
+from sklearn.metrics import get_scorer
 
 from sklearn.linear_model.base import LinearRegression
 from sklearn.linear_model.ridge import ridge_regression
@@ -336,7 +335,7 @@ def _test_ridge_loo(filter_):
     assert_equal(ridge_gcv3.alpha_, alpha_)
 
     # check that we get same best alpha with a scorer
-    scorer = SCORERS['mean_squared_error']
+    scorer = get_scorer('mean_squared_error')
     ridge_gcv4 = RidgeCV(fit_intercept=False, scoring=scorer)
     ridge_gcv4.fit(filter_(X_diabetes), y_diabetes)
     assert_equal(ridge_gcv4.alpha_, alpha_)
@@ -449,6 +448,13 @@ def test_ridge_cv_sparse_svd():
     X = sp.csr_matrix(X_diabetes)
     ridge = RidgeCV(gcv_mode="svd")
     assert_raises(TypeError, ridge.fit, X)
+
+
+def test_ridge_sparse_svd():
+    X = sp.csc_matrix(rng.rand(100, 10))
+    y = rng.rand(100)
+    ridge = Ridge(solver='svd')
+    assert_raises(TypeError, ridge.fit, X, y)
 
 
 def test_class_weights():
@@ -576,7 +582,6 @@ def test_raises_value_error_if_sample_weights_greater_than_1d():
 
     rng = np.random.RandomState(42)
 
-
     for n_samples, n_features in zip(n_sampless, n_featuress):
         X = rng.randn(n_samples, n_features)
         y = rng.randn(n_samples)
@@ -639,26 +644,6 @@ def test_sparse_design_with_sample_weights():
                                       decimal=6)
 
 
-def test_deprecation_warning_dense_cholesky():
-    """Tests if DeprecationWarning is raised at instantiation of estimators
-    and when ridge_regression is called"""
-
-    warning_class = DeprecationWarning
-    warning_message = ("The name 'dense_cholesky' is deprecated."
-                       " Using 'cholesky' instead")
-
-    X = np.ones([2, 3])
-    y = np.ones(2)
-    func1 = lambda: Ridge(solver='dense_cholesky').fit(X, y)
-    func2 = lambda: RidgeClassifier(solver='dense_cholesky').fit(X, y)
-    X = np.ones([3, 2])
-    y = np.zeros(3)
-    func3 = lambda: ridge_regression(X, y, alpha=1, solver='dense_cholesky')
-
-    for func in [func1, func2, func3]:
-        assert_warns_message(warning_class, warning_message, func)
-
-
 def test_raises_value_error_if_solver_not_supported():
     """Tests whether a ValueError is raised if a non-identified solver
     is passed to ridge_regression"""
@@ -674,3 +659,9 @@ def test_raises_value_error_if_solver_not_supported():
         ridge_regression(X, y, alpha=1., solver=wrong_solver)
 
     assert_raise_message(exception, message, func)
+
+
+def test_sparse_cg_max_iter():
+    reg = Ridge(solver="sparse_cg", max_iter=1)
+    reg.fit(X_diabetes, y_diabetes)
+    assert_equal(reg.coef_.shape[0], X_diabetes.shape[1])

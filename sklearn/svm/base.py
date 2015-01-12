@@ -7,11 +7,12 @@ from abc import ABCMeta, abstractmethod
 
 from . import libsvm, liblinear
 from . import libsvm_sparse
-from ..base import BaseEstimator, ClassifierMixin
+from ..base import BaseEstimator, ClassifierMixin, RegressorMixin
 from ..preprocessing import LabelEncoder
 from ..utils import check_array, check_random_state, column_or_1d
 from ..utils import ConvergenceWarning, compute_class_weight
 from ..utils.extmath import safe_sparse_dot
+from ..utils.validation import check_is_fitted
 from ..externals import six
 
 
@@ -354,11 +355,12 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             Returns the decision function of the sample for each class
             in the model.
         """
+        # NOTE: _validate_for_predict contains check for is_fitted
+        # hence must be placed before any other attributes are used.
+        X = self._validate_for_predict(X)
         if self._sparse:
             raise NotImplementedError("Decision_function not supported for"
                                       " sparse SVM.")
-
-        X = self._validate_for_predict(X)
         X = self._compute_kernel(X)
 
         kernel = self.kernel
@@ -381,9 +383,8 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
         return dec_func
 
     def _validate_for_predict(self, X):
-        if not hasattr(self, "support_"):
-            raise ValueError("this %s has not been fitted yet"
-                             % type(self).__name__)
+        check_is_fitted(self, 'support_')
+        
         X = check_array(X, accept_sparse='csr', dtype=np.float64, order="C")
         if self._sparse and not sp.isspmatrix(X):
             X = sp.csr_matrix(X)
@@ -413,20 +414,10 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             raise ValueError('coef_ is only available when using a '
                              'linear kernel')
 
-        if self.dual_coef_.shape[0] == 1:
-            # binary classifier
-            coef = -safe_sparse_dot(self.dual_coef_, self.support_vectors_)
-        else:
-            # 1vs1 classifier
-            coef = _one_vs_one_coef(self.dual_coef_, self.n_support_,
-                                    self.support_vectors_)
-            if sp.issparse(coef[0]):
-                coef = sp.vstack(coef).tocsr()
-            else:
-                coef = np.vstack(coef)
+        coef = self._get_coef()
 
-        # coef_ being a read-only property it's better to mark the value as
-        # immutable to avoid hiding potential bugs for the unsuspecting user
+        # coef_ being a read-only property, it's better to mark the value as
+        # immutable to avoid hiding potential bugs for the unsuspecting user.
         if sp.issparse(coef):
             # sparse matrix do not have global flags
             coef.data.flags.writeable = False
@@ -434,6 +425,9 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             # regular dense array
             coef.flags.writeable = False
         return coef
+
+    def _get_coef(self):
+        return safe_sparse_dot(self.dual_coef_, self.support_vectors_)
 
 
 class BaseSVC(BaseLibSVM, ClassifierMixin):
@@ -585,6 +579,22 @@ class BaseSVC(BaseLibSVM, ClassifierMixin):
             self.probability, self.n_support_,
             self.probA_, self.probB_)
 
+    def _get_coef(self):
+        if self.dual_coef_.shape[0] == 1:
+            # binary classifier
+            coef = -safe_sparse_dot(self.dual_coef_, self.support_vectors_)
+        else:
+            # 1vs1 classifier
+            coef = _one_vs_one_coef(self.dual_coef_, self.n_support_,
+                                    self.support_vectors_)
+            if sp.issparse(coef[0]):
+                coef = sp.vstack(coef).tocsr()
+            else:
+                coef = np.vstack(coef)
+
+        return coef
+
+
 def _get_liblinear_solver_type(multi_class, penalty, loss, dual):
     """Find the liblinear magic number for the solver.
 
@@ -607,6 +617,9 @@ def _get_liblinear_solver_type(multi_class, penalty, loss, dual):
         'PL1_LL2_D0': 5,  # L1 penalty, L2 Loss, primal form
         'PL1_LLR_D0': 6,  # L1 penalty, logistic regression
         'PL2_LLR_D1': 7,  # L2 penalty, logistic regression, dual form
+        'PL2_LSE_D0': 11, # L2 penalty, squared epsilon-insensitive loss, primal form
+        'PL2_LSE_D1': 12, # L2 penalty, squared epsilon-insensitive loss, dual form
+        'PL2_LEI_D1': 13, # L2 penalty, epsilon-insensitive loss, dual form
     }
 
     if multi_class == 'crammer_singer':
@@ -637,7 +650,8 @@ def _get_liblinear_solver_type(multi_class, penalty, loss, dual):
 
 def _fit_liblinear(X, y, C, fit_intercept, intercept_scaling, class_weight,
                    penalty, dual, verbose, max_iter, tol,
-                   random_state=None, multi_class='ovr', loss='lr'):
+                   random_state=None, multi_class='ovr', loss='lr',
+                   epsilon=0.1):
     """Used by Logistic Regression (and CV) and LinearSVC.
 
     Preprocessing is done in this function before supplying it to liblinear.
@@ -698,9 +712,10 @@ def _fit_liblinear(X, y, C, fit_intercept, intercept_scaling, class_weight,
         If `crammer_singer` is chosen, the options loss, penalty and dual will
         be ignored.
 
-    loss : str, {'lr', 'l1', 'l2'}
+    loss : str, {'lr', 'l1', 'l2', 'ei'}
         The loss function. 'l1' is the hinge loss while 'l2' is the squared
-        hinge loss and 'lr' is the Logistic loss.
+        hinge loss, 'lr' is the Logistic loss and 'ei' is the epsilon-insensitive
+        loss.
 
     Returns
     -------
@@ -713,15 +728,19 @@ def _fit_liblinear(X, y, C, fit_intercept, intercept_scaling, class_weight,
     n_iter_ : int
         Maximum number of iterations run across all classes.
     """
-    enc = LabelEncoder()
-    y_ind = enc.fit_transform(y)
-    classes_ = enc.classes_
-    if len(classes_) < 2:
-        raise ValueError("This solver needs samples of at least 2 classes"
-                         " in the data, but the data contains only one"
-                         " class: %r" % classes_[0])
+    if loss is not 'ei':
+        enc = LabelEncoder()
+        y_ind = enc.fit_transform(y)
+        classes_ = enc.classes_
+        if len(classes_) < 2:
+            raise ValueError("This solver needs samples of at least 2 classes"
+                             " in the data, but the data contains only one"
+                             " class: %r" % classes_[0])
 
-    class_weight_ = compute_class_weight(class_weight, classes_, y)
+        class_weight_ = compute_class_weight(class_weight, classes_, y)
+    else:
+        class_weight_ = np.empty(0, dtype=np.float)
+        y_ind = y
     liblinear.set_verbosity_wrap(verbose)
     rnd = check_random_state(random_state)
     if verbose:
@@ -740,7 +759,8 @@ def _fit_liblinear(X, y, C, fit_intercept, intercept_scaling, class_weight,
     solver_type = _get_liblinear_solver_type(multi_class, penalty, loss, dual)
     raw_coef_, n_iter_  = liblinear.train_wrap(
         X, y_ind, sp.isspmatrix(X), solver_type, tol, bias, C,
-        class_weight_, max_iter, rnd.randint(np.iinfo('i').max)
+        class_weight_, max_iter, rnd.randint(np.iinfo('i').max),
+        epsilon
         )
     # Regarding rnd.randint(..) in the above signature:
     # seed for srand in range [0..INT_MAX); due to limitations in Numpy

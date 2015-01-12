@@ -6,6 +6,8 @@
 
 
 import numpy as np
+import warnings
+
 from scipy import special, stats
 from scipy.sparse import issparse
 
@@ -14,6 +16,7 @@ from ..preprocessing import LabelBinarizer
 from ..utils import (as_float_array, check_array, check_X_y, safe_sqr,
                      safe_mask)
 from ..utils.extmath import norm, safe_sparse_dot
+from ..utils.validation import check_is_fitted
 from .base import SelectorMixin
 
 
@@ -102,6 +105,10 @@ def f_oneway(*args):
     dfwn = n_samples - n_classes
     msb = ssbn / float(dfbn)
     msw = sswn / float(dfwn)
+    constant_features_idx = np.where(msw == 0.)[0]
+    if (np.nonzero(msb)[0].size != msb.size and constant_features_idx.size):
+        warnings.warn("Features %s are constant." % constant_features_idx,
+                      UserWarning)
     f = msb / msw
     # flatten matrix to vector in sparse case
     f = np.asarray(f).ravel()
@@ -346,6 +353,8 @@ class SelectPercentile(_BaseFilter):
                              % self.percentile)
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         # Cater for NaNs
         if self.percentile == 100:
             return np.ones(len(self.scores_), dtype=np.bool)
@@ -403,6 +412,8 @@ class SelectKBest(_BaseFilter):
                              % self.k)
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         if self.k == 'all':
             return np.ones(self.scores_.shape, dtype=bool)
         elif self.k == 0:
@@ -446,6 +457,8 @@ class SelectFpr(_BaseFilter):
         self.alpha = alpha
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         return self.pvalues_ < self.alpha
 
 
@@ -479,6 +492,8 @@ class SelectFdr(_BaseFilter):
         self.alpha = alpha
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         alpha = self.alpha
         sv = np.sort(self.pvalues_)
         threshold = sv[sv < alpha * np.arange(len(self.pvalues_))].max()
@@ -511,6 +526,8 @@ class SelectFwe(_BaseFilter):
         self.alpha = alpha
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         return (self.pvalues_ < self.alpha / len(self.pvalues_))
 
 
@@ -576,6 +593,8 @@ class GenericUnivariateSelect(_BaseFilter):
         self._make_selector()._check_params(X, y)
 
     def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+
         selector = self._make_selector()
         selector.pvalues_ = self.pvalues_
         selector.scores_ = self.scores_

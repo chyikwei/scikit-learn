@@ -11,8 +11,10 @@ from .murmurhash import murmurhash3_32
 from .validation import (as_float_array,
                          assert_all_finite, warn_if_not_float,
                          check_random_state, column_or_1d, check_array,
-                         check_consistent_length, check_X_y, indexable)
+                         check_consistent_length, check_X_y, indexable,
+                         check_symmetric)
 from .class_weight import compute_class_weight
+from ..externals.joblib import cpu_count
 
 
 __all__ = ["murmurhash3_32", "as_float_array",
@@ -242,8 +244,8 @@ def resample(*arrays, **options):
             max_n_samples, n_samples))
 
     check_consistent_length(*arrays)
-    arrays = [check_array(x, accept_sparse='csr', ensure_2d=False)
-              for x in arrays]
+    arrays = [check_array(x, accept_sparse='csr', ensure_2d=False,
+                          allow_nd=True) for x in arrays]
 
     if replace:
         indices = random_state.randint(0, n_samples, size=(max_n_samples,))
@@ -407,6 +409,45 @@ def gen_even_slices(n, n_packs, n_samples=None):
             start = end
 
 
+def _get_n_jobs(n_jobs):
+    """Get number of jobs for the computation.
+
+    This function reimplements the logic of joblib to determine the actual
+    number of jobs depending on the cpu count. If -1 all CPUs are used.
+    If 1 is given, no parallel computing code is used at all, which is useful
+    for debugging. For n_jobs below -1, (n_cpus + 1 + n_jobs) are used.
+    Thus for n_jobs = -2, all CPUs but one are used.
+
+    Parameters
+    ----------
+    n_jobs : int
+        Number of jobs stated in joblib convention.
+
+    Returns
+    -------
+    n_jobs : int
+        The actual number of jobs as positive integer.
+
+    Examples
+    --------
+    >>> from sklearn.utils import _get_n_jobs
+    >>> _get_n_jobs(4)
+    4
+    >>> jobs = _get_n_jobs(-2)
+    >>> assert jobs == max(cpu_count() - 1, 1)
+    >>> _get_n_jobs(0)
+    Traceback (most recent call last):
+    ...
+    ValueError: Parameter n_jobs == 0 has no meaning.
+    """
+    if n_jobs < 0:
+        return max(cpu_count() + 1 + n_jobs, 1)
+    elif n_jobs == 0:
+        raise ValueError('Parameter n_jobs == 0 has no meaning.')
+    else:
+        return n_jobs
+
+
 def tosequence(x):
     """Cast iterable x to a Sequence, avoiding a copy if possible."""
     if isinstance(x, np.ndarray):
@@ -417,5 +458,9 @@ def tosequence(x):
         return list(x)
 
 
-class ConvergenceWarning(Warning):
-    "Custom warning to capture convergence problems"
+class ConvergenceWarning(UserWarning):
+    """Custom warning to capture convergence problems"""
+
+
+class DataDimensionalityWarning(UserWarning):
+    """Custom warning to notify potential issues with data dimensionality"""

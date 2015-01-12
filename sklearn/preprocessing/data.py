@@ -19,6 +19,7 @@ from ..utils.fixes import combinations_with_replacement as combinations_w_r
 from ..utils.sparsefuncs_fast import (inplace_csr_row_normalize_l1,
                                       inplace_csr_row_normalize_l2)
 from ..utils.sparsefuncs import (inplace_column_scale, mean_variance_axis)
+from ..utils.validation import check_is_fitted
 
 zip = six.moves.zip
 map = six.moves.map
@@ -217,6 +218,8 @@ class MinMaxScaler(BaseEstimator, TransformerMixin):
         X : array-like with shape [n_samples, n_features]
             Input data that will be transformed.
         """
+        check_is_fitted(self, 'scale_')
+
         X = check_array(X, copy=self.copy, ensure_2d=False)
         X *= self.scale_
         X += self.min_
@@ -230,6 +233,8 @@ class MinMaxScaler(BaseEstimator, TransformerMixin):
         X : array-like with shape [n_samples, n_features]
             Input data that will be transformed.
         """
+        check_is_fitted(self, 'scale_')
+
         X = check_array(X, copy=self.copy, ensure_2d=False)
         X -= self.min_
         X /= self.scale_
@@ -337,6 +342,8 @@ class StandardScaler(BaseEstimator, TransformerMixin):
         X : array-like with shape [n_samples, n_features]
             The data used to scale along the features axis.
         """
+        check_is_fitted(self, 'std_')
+
         copy = copy if copy is not None else self.copy
         X = check_array(X, accept_sparse='csr', copy=copy, ensure_2d=False)
         if warn_if_not_float(X, estimator=self):
@@ -363,6 +370,8 @@ class StandardScaler(BaseEstimator, TransformerMixin):
         X : array-like with shape [n_samples, n_features]
             The data used to scale along the features axis.
         """
+        check_is_fitted(self, 'std_')
+
         copy = copy if copy is not None else self.copy
         if sparse.issparse(X):
             if self.with_mean:
@@ -482,6 +491,8 @@ class PolynomialFeatures(BaseEstimator, TransformerMixin):
             The matrix of features, where NP is the number of polynomial
             features generated from the combination of inputs.
         """
+        check_is_fitted(self, 'powers_')
+
         X = check_array(X)
         n_samples, n_features = X.shape
 
@@ -764,6 +775,8 @@ class KernelCenterer(BaseEstimator, TransformerMixin):
         -------
         K_new : numpy array of shape [n_samples1, n_samples2]
         """
+        check_is_fitted(self, 'K_fit_all_')
+
         K = check_array(K)
         if copy:
             K = K.copy()
@@ -925,6 +938,10 @@ class OneHotEncoder(BaseEstimator, TransformerMixin):
     sparse : boolean, default=True
         Will return sparse matrix if set True else will return an array.
 
+    handle_unknown : str, 'error' or 'ignore'
+        Whether to raise an error or ignore if a unknown categorical feature is
+        present during transform.
+
     Attributes
     ----------
     active_features_ : array
@@ -951,7 +968,7 @@ class OneHotEncoder(BaseEstimator, TransformerMixin):
     >>> enc.fit([[0, 0, 3], [1, 1, 0], [0, 2, 1], \
 [1, 0, 2]])  # doctest: +ELLIPSIS
     OneHotEncoder(categorical_features='all', dtype=<... 'float'>,
-           n_values='auto', sparse=True)
+           handle_unknown='error', n_values='auto', sparse=True)
     >>> enc.n_values_
     array([2, 3, 4])
     >>> enc.feature_indices_
@@ -967,11 +984,12 @@ class OneHotEncoder(BaseEstimator, TransformerMixin):
       encoding of dictionary items or strings.
     """
     def __init__(self, n_values="auto", categorical_features="all",
-                 dtype=np.float, sparse=True):
+                 dtype=np.float, sparse=True, handle_unknown='error'):
         self.n_values = n_values
         self.categorical_features = categorical_features
         self.dtype = dtype
         self.sparse = sparse
+        self.handle_unknown = handle_unknown
 
     def fit(self, X, y=None):
         """Fit OneHotEncoder to X.
@@ -1056,13 +1074,23 @@ class OneHotEncoder(BaseEstimator, TransformerMixin):
                              " Expected %d, got %d."
                              % (indices.shape[0] - 1, n_features))
 
-        if (np.max(X, axis=0) >= self.n_values_).any():
-            raise ValueError("Feature out of bounds. Try setting n_values.")
+        # We use only those catgorical features of X that are known using fit.
+        # i.e lesser than n_values_ using mask.
+        # This means, if self.handle_unknown is "ignore", the row_indices and
+        # col_indices corresponding to the unknown categorical feature are ignored.
+        mask = (X < self.n_values_).ravel()
+        if np.any(~mask):
+            if self.handle_unknown not in ['error', 'ignore']:
+                raise ValueError("handle_unknown should be either error or "
+                                 "unknown got %s" % self.handle_unknown)
+            if self.handle_unknown == 'error':
+                raise ValueError("unknown categorical feature present %s "
+                                 "during transform." % X[~mask])
 
-        column_indices = (X + indices[:-1]).ravel()
+        column_indices = (X + indices[:-1]).ravel()[mask]
         row_indices = np.repeat(np.arange(n_samples, dtype=np.int32),
-                                n_features)
-        data = np.ones(n_samples * n_features)
+                                n_features)[mask]
+        data = np.ones(np.sum(mask))
         out = sparse.coo_matrix((data, (row_indices, column_indices)),
                                 shape=(n_samples, indices[-1]),
                                 dtype=self.dtype).tocsr()

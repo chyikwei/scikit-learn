@@ -18,6 +18,7 @@ from scipy.spatial.distance import cdist
 from ..externals.six.moves import xrange
 from ..utils import check_random_state
 from ..utils.extmath import logsumexp, pinvh, squared_norm
+from ..utils.validation import check_is_fitted
 from .. import cluster
 from .gmm import GMM
 
@@ -242,6 +243,8 @@ class DPGMM(GMM):
             Posterior probabilities of each mixture component for each
             observation
         """
+        check_is_fitted(self, 'gamma_')
+
         X = np.asarray(X)
         if X.ndim == 1:
             X = X[:, np.newaxis]
@@ -327,8 +330,8 @@ class DPGMM(GMM):
             self.dof_ = 2 + X.shape[0] + n_features
             self.scale_ = (X.shape[0] + 1) * np.identity(n_features)
             for k in range(self.n_components):
-                    diff = X - self.means_[k]
-                    self.scale_ += np.dot(diff.T, z[:, k:k + 1] * diff)
+                diff = X - self.means_[k]
+                self.scale_ += np.dot(diff.T, z[:, k:k + 1] * diff)
             self.scale_ = pinvh(self.scale_)
             self.precs_ = self.dof_ * self.scale_
             self.det_scale_ = linalg.det(self.scale_)
@@ -452,10 +455,11 @@ class DPGMM(GMM):
 
     def lower_bound(self, X, z):
         """returns a lower bound on model evidence based on X and membership"""
+        check_is_fitted(self, 'means_')
+        
         if self.covariance_type not in ['full', 'tied', 'diag', 'spherical']:
             raise NotImplementedError("This ctype is not implemented: %s"
                                       % self.covariance_type)
-
         X = np.asarray(X)
         if X.ndim == 1:
             X = X[:, np.newaxis]
@@ -478,7 +482,7 @@ class DPGMM(GMM):
         For a full derivation and description of the algorithm see
         doc/modules/dp-derivation.rst
         or
-        http://scikit-learn.org/stable/modules/dp-derivation.html#
+        http://scikit-learn.org/stable/modules/dp-derivation.html
 
         A initialization step is performed before entering the em
         algorithm. If you want to avoid this step, set the keyword
@@ -678,12 +682,11 @@ class VBGMM(DPGMM):
             Posterior probabilities of each mixture component for each
             observation
         """
+        check_is_fitted(self, 'gamma_')
+
         X = np.asarray(X)
         if X.ndim == 1:
             X = X[:, np.newaxis]
-        z = np.zeros((X.shape[0], self.n_components))
-        p = np.zeros(self.n_components)
-        bound = np.zeros(X.shape[0])
         dg = digamma(self.gamma_) - digamma(np.sum(self.gamma_))
 
         if self.covariance_type not in ['full', 'tied', 'diag', 'spherical']:

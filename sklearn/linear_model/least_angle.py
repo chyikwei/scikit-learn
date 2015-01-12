@@ -85,22 +85,22 @@ def lars_path(X, y, Xy=None, Gram=None, max_iter=500,
     verbose : int (default=0)
         Controls output verbosity.
 
-    return_path: bool, (optional=True)
+    return_path : bool, (optional=True)
         If ``return_path==True`` returns the entire path, else returns only the
         last point of the path.
 
     Returns
     --------
-    alphas: array, shape: [n_alphas + 1]
+    alphas : array, shape: [n_alphas + 1]
         Maximum of covariances (in absolute value) at each iteration.
         ``n_alphas`` is either ``max_iter``, ``n_features`` or the
         number of nodes in the path with ``alpha >= alpha_min``, whichever
         is smaller.
 
-    active: array, shape [n_alphas]
+    active : array, shape [n_alphas]
         Indices of active variables at the end of the path.
 
-    coefs: array, shape (n_features, n_alphas + 1)
+    coefs : array, shape (n_features, n_alphas + 1)
         Coefficients along the path
 
     n_iter : int
@@ -169,7 +169,7 @@ def lars_path(X, y, Xy=None, Gram=None, max_iter=500,
         if X.shape[0] > X.shape[1]:
             Gram = np.dot(X.T, X)
     elif copy_Gram:
-            Gram = Gram.copy()
+        Gram = Gram.copy()
 
     if Xy is None:
         Cov = np.dot(X.T, y)
@@ -185,6 +185,7 @@ def lars_path(X, y, Xy=None, Gram=None, max_iter=500,
 
     tiny = np.finfo(np.float).tiny  # to avoid division by 0 warning
     tiny32 = np.finfo(np.float32).tiny  # to avoid division by 0 warning
+    equality_tolerance = np.finfo(np.float32).eps
 
     while True:
         if Cov.size:
@@ -201,8 +202,8 @@ def lars_path(X, y, Xy=None, Gram=None, max_iter=500,
             prev_coef = coefs[n_iter - 1]
 
         alpha[0] = C / n_samples
-        if alpha[0] <= alpha_min:  # early stopping
-            if not (abs(alpha[0] - alpha_min) < 10 * np.finfo(np.float32).eps):
+        if alpha[0] <= alpha_min + equality_tolerance:  # early stopping
+            if abs(alpha[0] - alpha_min) > equality_tolerance:
                 # interpolation factor 0 <= ss < 1
                 if n_iter > 0:
                     # In the first iteration, all alphas are zero, the formula
@@ -265,7 +266,13 @@ def lars_path(X, y, Xy=None, Gram=None, max_iter=500,
             if diag < 1e-7:
                 # The system is becoming too ill-conditioned.
                 # We have degenerate vectors in our active set.
-                # We'll 'drop for good' the last regressor added
+                # We'll 'drop for good' the last regressor added.
+
+                # Note: this case is very rare. It is no longer triggered by the
+                # test suite. The `equality_tolerance` margin added in 0.16.0 to
+                # get early stopping to work consistently on all versions of
+                # Python including 32 bit Python under Windows seems to make it
+                # very difficult to trigger the 'drop for good' strategy.
                 warnings.warn('Regressors in active set degenerate. '
                               'Dropping a regressor, after %i iterations, '
                               'i.e. alpha=%.3e, '
@@ -479,7 +486,7 @@ class Lars(LinearModel, RegressorMixin):
     copy_X : boolean, optional, default True
         If ``True``, X will be copied; else, it may be overwritten.
 
-    eps: float, optional
+    eps : float, optional
         The machine-precision regularization in the computation of the
         Cholesky diagonal factors. Increase this for very ill-conditioned
         systems. Unlike the ``tol`` parameter in some iterative
@@ -902,7 +909,7 @@ class LarsCV(Lars):
         Number of CPUs to use during the cross validation. If ``-1``, use
         all the CPUs
 
-    eps: float, optional
+    eps : float, optional
         The machine-precision regularization in the computation of the
         Cholesky diagonal factors. Increase this for very ill-conditioned
         systems.
@@ -1060,7 +1067,7 @@ class LassoLarsCV(LarsCV):
         calculations. If set to ``'auto'`` let us decide. The Gram
         matrix can also be passed as argument.
 
-    max_iter: integer, optional
+    max_iter : integer, optional
         Maximum number of iterations to perform.
 
     cv : cross-validation generator, optional
@@ -1075,7 +1082,7 @@ class LassoLarsCV(LarsCV):
         Number of CPUs to use during the cross validation. If ``-1``, use
         all the CPUs
 
-    eps: float, optional
+    eps : float, optional
         The machine-precision regularization in the computation of the
         Cholesky diagonal factors. Increase this for very ill-conditioned
         systems.
@@ -1145,7 +1152,7 @@ class LassoLarsIC(LassoLars):
 
     Parameters
     ----------
-    criterion: 'bic' | 'aic'
+    criterion : 'bic' | 'aic'
         The type of criterion to use.
 
     fit_intercept : boolean
@@ -1167,11 +1174,11 @@ class LassoLarsIC(LassoLars):
         calculations. If set to ``'auto'`` let us decide. The Gram
         matrix can also be passed as argument.
 
-    max_iter: integer, optional
+    max_iter : integer, optional
         Maximum number of iterations to perform. Can be used for
         early stopping.
 
-    eps: float, optional
+    eps : float, optional
         The machine-precision regularization in the computation of the
         Cholesky diagonal factors. Increase this for very ill-conditioned
         systems. Unlike the ``tol`` parameter in some iterative
@@ -1193,6 +1200,11 @@ class LassoLarsIC(LassoLars):
     n_iter_ : int
         number of iterations run by lars_path to find the grid of
         alphas.
+
+    criterion_ : array, shape (n_alphas,)
+        The value of the information criteria ('aic', 'bic') across all
+        alphas. The alpha which has the smallest information criteria
+        is chosen.
 
     Examples
     --------

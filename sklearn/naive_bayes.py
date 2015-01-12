@@ -27,6 +27,8 @@ from .preprocessing import label_binarize
 from .utils import check_X_y, check_array
 from .utils.extmath import safe_sparse_dot, logsumexp
 from .utils.multiclass import _check_partial_fit_first_call
+from .utils.fixes import in1d
+from .utils.validation import check_is_fitted
 from .externals import six
 
 __all__ = ['BernoulliNB', 'GaussianNB', 'MultinomialNB']
@@ -297,12 +299,24 @@ class GaussianNB(BaseNB):
             self.class_prior_ = np.zeros(n_classes)
             self.class_count_ = np.zeros(n_classes)
         else:
+            if X.shape[1] != self.theta_.shape[1]:
+                msg = "Number of features %d does not match previous data %d."
+                raise ValueError(msg % (X.shape[1], self.theta_.shape[1]))
             # Put epsilon back in each time
             self.sigma_[:, :] -= epsilon
 
-        class2idx = dict((cls, idx) for idx, cls in enumerate(self.classes_))
-        for y_i in np.unique(y):
-            i = class2idx[y_i]
+        classes = self.classes_
+
+        unique_y = np.unique(y)
+        unique_y_in_classes = in1d(unique_y, classes)
+
+        if not np.all(unique_y_in_classes):
+            raise ValueError(
+                    "The target label(s) %s in y do not exist in the "
+                    "initial classes %s" % (y[~unique_y_in_classes], classes))
+
+        for y_i in unique_y:
+            i = classes.searchsorted(y_i)
             X_i = X[y == y_i, :]
             N_i = X_i.shape[0]
 
@@ -319,6 +333,8 @@ class GaussianNB(BaseNB):
         return self
 
     def _joint_log_likelihood(self, X):
+        check_is_fitted(self, "classes_")
+
         X = check_array(X)
         joint_log_likelihood = []
         for i in range(np.size(self.classes_)):
@@ -402,6 +418,9 @@ class BaseDiscreteNB(BaseNB):
             self.class_count_ = np.zeros(n_effective_classes, dtype=np.float64)
             self.feature_count_ = np.zeros((n_effective_classes, n_features),
                                            dtype=np.float64)
+        elif n_features != self.coef_.shape[1]:
+            msg = "Number of features %d does not match previous data %d."
+            raise ValueError(msg % (n_features, self.coef_.shape[-1]))
 
         Y = label_binarize(y, classes=self.classes_)
         if Y.shape[1] == 1:
@@ -563,8 +582,7 @@ class MultinomialNB(BaseDiscreteNB):
     ----------
     C.D. Manning, P. Raghavan and H. Schuetze (2008). Introduction to
     Information Retrieval. Cambridge University Press, pp. 234-265.
-    http://nlp.stanford.edu/IR-book/html/htmledition/
-        naive-bayes-text-classification-1.html
+    http://nlp.stanford.edu/IR-book/html/htmledition/naive-bayes-text-classification-1.html
     """
 
     def __init__(self, alpha=1.0, fit_prior=True, class_prior=None):
@@ -589,6 +607,8 @@ class MultinomialNB(BaseDiscreteNB):
 
     def _joint_log_likelihood(self, X):
         """Calculate the posterior log probability of the samples X"""
+        check_is_fitted(self, "classes_")
+
         X = check_array(X, accept_sparse='csr')
         return (safe_sparse_dot(X, self.feature_log_prob_.T)
                 + self.class_log_prior_)
@@ -688,7 +708,8 @@ class BernoulliNB(BaseDiscreteNB):
 
     def _joint_log_likelihood(self, X):
         """Calculate the posterior log probability of the samples X"""
-
+        check_is_fitted(self, "classes_")
+        
         X = check_array(X, accept_sparse='csr')
 
         if self.binarize is not None:

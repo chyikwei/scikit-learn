@@ -28,6 +28,7 @@ from ..externals import six
 from ..externals.six import u, b
 from ..externals.six.moves import range, zip
 from ..utils import check_array
+from ..utils.fixes import frombuffer_empty
 
 
 def load_svmlight_file(f, n_features=None, dtype=np.float64,
@@ -108,6 +109,21 @@ def load_svmlight_file(f, n_features=None, dtype=np.float64,
     --------
     load_svmlight_files: similar function for loading multiple files in this
     format, enforcing the same number of features/columns on all of them.
+
+    Examples
+    --------
+    To use joblib.Memory to cache the svmlight file::
+
+        from sklearn.externals.joblib import Memory
+        from sklearn.datasets import load_svmlight_file
+        mem = Memory("./mycache")
+
+        @mem.cache
+        def get_data():
+            data = load_svmlight_file("mysvmlightfile")
+            return data[0], data[1]
+
+        X, y = get_data()
     """
     return tuple(load_svmlight_files([f], n_features, dtype, multilabel,
                                      zero_based, query_id))
@@ -130,14 +146,6 @@ def _gen_open(f):
         return open(f, "rb")
 
 
-def _frombuffer(x, dtype):
-    # np.frombuffer doesn't like zero-length buffers in older NumPy
-    if len(x):
-        return np.frombuffer(x, dtype=dtype)
-    else:
-        return np.empty(0, dtype=dtype)
-
-
 def _open_and_load(f, dtype, multilabel, zero_based, query_id):
     if hasattr(f, "read"):
         actual_dtype, data, ind, indptr, labels, query = \
@@ -150,11 +158,11 @@ def _open_and_load(f, dtype, multilabel, zero_based, query_id):
 
     # convert from array.array, give data the right dtype
     if not multilabel:
-        labels = _frombuffer(labels, np.float64)
-    data = _frombuffer(data, actual_dtype)
-    indices = _frombuffer(ind, np.intc)
+        labels = frombuffer_empty(labels, np.float64)
+    data = frombuffer_empty(data, actual_dtype)
+    indices = frombuffer_empty(ind, np.intc)
     indptr = np.frombuffer(indptr, dtype=np.intc)   # never empty
-    query = _frombuffer(query, np.intc)
+    query = frombuffer_empty(query, np.intc)
 
     data = np.asarray(data, dtype=dtype)    # no-op for float{32,64}
     return data, indices, indptr, labels, query
@@ -219,8 +227,8 @@ def load_svmlight_files(files, n_features=None, dtype=np.float64,
     ..., Xn, yn, qn] where (Xi, yi, qi) is the result from
     load_svmlight_file(files[i])
 
-    Rationale
-    ---------
+    Notes
+    -----
     When fitting a model to a matrix X_train and evaluating it against a
     matrix X_test, it is essential that X_train and X_test have the same
     number of features (X_train.shape[1] == X_test.shape[1]). This may not

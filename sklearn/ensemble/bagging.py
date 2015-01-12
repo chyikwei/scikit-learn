@@ -10,7 +10,6 @@ import numbers
 import numpy as np
 from warnings import warn
 from abc import ABCMeta, abstractmethod
-from inspect import getargspec
 
 from ..base import ClassifierMixin, RegressorMixin
 from ..externals.joblib import Parallel, delayed
@@ -20,8 +19,10 @@ from ..metrics import r2_score, accuracy_score
 from ..tree import DecisionTreeClassifier, DecisionTreeRegressor
 from ..utils import check_random_state, check_X_y, check_array, column_or_1d
 from ..utils.random import sample_without_replacement
+from ..utils.validation import has_fit_parameter, check_is_fitted
 
 from .base import BaseEnsemble, _partition_estimators
+
 
 __all__ = ["BaggingClassifier",
            "BaggingRegressor"]
@@ -47,8 +48,9 @@ def _parallel_build_estimators(n_estimators, ensemble, X, y, sample_weight,
 
     bootstrap = ensemble.bootstrap
     bootstrap_features = ensemble.bootstrap_features
-    support_sample_weight = ("sample_weight" in
-                             getargspec(ensemble.base_estimator_.fit)[0])
+    support_sample_weight = has_fit_parameter(ensemble.base_estimator_,
+                                              "sample_weight")
+
 
     # Build estimators
     estimators = []
@@ -515,7 +517,8 @@ class BaggingClassifier(BaseBagging, ClassifierMixin):
         y : array of shape = [n_samples]
             The predicted classes.
         """
-        return self.classes_.take(np.argmax(self.predict_proba(X), axis=1),
+        predicted_probabilitiy = self.predict_proba(X)
+        return self.classes_.take((np.argmax(predicted_probabilitiy, axis=1)),
                                   axis=0)
 
     def predict_proba(self, X):
@@ -540,6 +543,7 @@ class BaggingClassifier(BaseBagging, ClassifierMixin):
             The class probabilities of the input samples. The order of the
             classes corresponds to that in the attribute `classes_`.
         """
+        check_is_fitted(self, "classes_")
         # Check data
         X = check_array(X, accept_sparse=['csr', 'csc', 'coo'])
 
@@ -585,6 +589,7 @@ class BaggingClassifier(BaseBagging, ClassifierMixin):
             The class log-probabilities of the input samples. The order of the
             classes corresponds to that in the attribute `classes_`.
         """
+        check_is_fitted(self, "classes_")
         if hasattr(self.base_estimator_, "predict_log_proba"):
             # Check data
             X = check_array(X)
@@ -638,6 +643,7 @@ class BaggingClassifier(BaseBagging, ClassifierMixin):
             cases with ``k == 1``, otherwise ``k==n_classes``.
 
         """
+        check_is_fitted(self, "classes_")
         # Trigger an exception if not supported
         if not hasattr(self.base_estimator_, "decision_function"):
             raise NotImplementedError
@@ -745,11 +751,11 @@ class BaggingRegressor(BaseBagging, RegressorMixin):
     oob_score_ : float
         Score of the training dataset obtained using an out-of-bag estimate.
 
-    oob_decision_function_ : array of shape = [n_samples, n_classes]
-        Decision function computed with out-of-bag estimate on the training
+    oob_prediction_ : array of shape = [n_samples]
+        Prediction computed with out-of-bag estimate on the training
         set. If n_estimators is small it might be possible that a data point
         was never left out during the bootstrap. In this case,
-        `oob_decision_function_` might contain NaN.
+        `oob_prediction_` might contain NaN.
 
     References
     ----------
@@ -808,6 +814,7 @@ class BaggingRegressor(BaseBagging, RegressorMixin):
         y : array of shape = [n_samples]
             The predicted values.
         """
+        check_is_fitted(self, "estimators_features_")
         # Check data
         X = check_array(X, accept_sparse=['csr', 'csc', 'coo'])
 

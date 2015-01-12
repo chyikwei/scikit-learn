@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 
 from sklearn.isotonic import check_increasing, isotonic_regression,\
     IsotonicRegression
@@ -230,6 +231,28 @@ def test_isotonic_regression_oob_bad_after():
     ir.out_of_bounds = "xyz"
     assert_raises(ValueError, ir.transform, x)
 
+
+def test_isotonic_regression_pickle():
+    y = np.array([3, 7, 5, 9, 8, 7, 10])
+    x = np.arange(len(y))
+
+    # Create model and fit
+    ir = IsotonicRegression(increasing='auto', out_of_bounds="clip")
+    ir.fit(x, y)
+
+    ir_ser = pickle.dumps(ir, pickle.HIGHEST_PROTOCOL)
+    ir2 = pickle.loads(ir_ser)
+    np.testing.assert_array_equal(ir.predict(x), ir2.predict(x))
+
+
+def test_isotonic_duplicate_min_entry():
+    x = [0, 0, 1]
+    y = [0, 0, 1]
+
+    ir = IsotonicRegression(increasing=True, out_of_bounds="clip")
+    ir.fit(x, y)
+    all_predictions_finite = np.all(np.isfinite(ir.predict(x)))
+    assert_true(all_predictions_finite)
 
 if __name__ == "__main__":
     import nose

@@ -21,7 +21,7 @@ from sklearn.utils.testing import ignore_warnings
 
 from sklearn.linear_model.coordinate_descent import Lasso, \
     LassoCV, ElasticNet, ElasticNetCV, MultiTaskLasso, MultiTaskElasticNet, \
-    MultiTaskElasticNetCV, MultiTaskLassoCV, lasso_path
+    MultiTaskElasticNetCV, MultiTaskLassoCV, lasso_path, enet_path
 from sklearn.linear_model import LassoLarsCV, lars_path
 
 
@@ -206,11 +206,6 @@ def test_lasso_path_return_models_vs_new_return_gives_same_coefficients():
     X = np.array([[1, 2, 3.1], [2.3, 5.4, 4.3]]).T
     y = np.array([1, 2, 3.1])
     alphas = [5., 1., .5]
-    # Compute the lasso_path
-    f = ignore_warnings
-    coef_path = [e.coef_ for e in f(lasso_path)(X, y, alphas=alphas,
-                                                return_models=True,
-                                                fit_intercept=False)]
 
     # Use lars_path and lasso_path(new output) with 1D linear interpolation
     # to compute the the same path
@@ -218,16 +213,13 @@ def test_lasso_path_return_models_vs_new_return_gives_same_coefficients():
     coef_path_cont_lars = interpolate.interp1d(alphas_lars[::-1],
                                                coef_path_lars[:, ::-1])
     alphas_lasso2, coef_path_lasso2, _ = lasso_path(X, y, alphas=alphas,
-                                                    fit_intercept=False,
                                                     return_models=False)
     coef_path_cont_lasso = interpolate.interp1d(alphas_lasso2[::-1],
                                                 coef_path_lasso2[:, ::-1])
 
-    np.testing.assert_array_almost_equal(coef_path_cont_lasso(alphas),
-                                         np.asarray(coef_path).T, decimal=1)
-    np.testing.assert_array_almost_equal(coef_path_cont_lasso(alphas),
-                                         coef_path_cont_lars(alphas),
-                                         decimal=1)
+    assert_array_almost_equal(
+        coef_path_cont_lasso(alphas), coef_path_cont_lars(alphas),
+        decimal=1)
 
 
 def test_enet_path():
@@ -560,6 +552,41 @@ def test_random_descent():
     # Raise error when selection is not in cyclic or random.
     clf_random = ElasticNet(selection='invalid')
     assert_raises(ValueError, clf_random.fit, X, y)
+
+
+def test_deprection_precompute_enet():
+    """
+    Test that setting precompute="auto" gives a Deprecation Warning.
+    """
+
+    X, y, _, _ = build_dataset(n_samples=20, n_features=10)
+    clf = ElasticNet(precompute="auto")
+    assert_warns(DeprecationWarning, clf.fit, X, y)
+    clf = Lasso(precompute="auto")
+    assert_warns(DeprecationWarning, clf.fit, X, y)
+
+
+def test_enet_path_positive():
+    """
+    Test that the coefs returned by positive=True in enet_path are positive
+    """
+
+    X, y, _, _ = build_dataset(n_samples=50, n_features=50)
+    for path in [enet_path, lasso_path]:
+        pos_path_coef = path(X, y, positive=True)[1]
+        assert_true(np.all(pos_path_coef >= 0))
+
+
+def test_sparse_dense_descent_paths():
+    """
+    Test that dense and sparse input give the same input for descent paths.
+    """
+    X, y, _, _ = build_dataset(n_samples=50, n_features=20)
+    csr = sparse.csr_matrix(X)
+    for path in [enet_path, lasso_path]:
+        _, coefs, _ = path(X, y, fit_intercept=False)
+        _, sparse_coefs, _ = path(csr, y, fit_intercept=False)
+        assert_array_almost_equal(coefs, sparse_coefs)
 
 
 if __name__ == '__main__':

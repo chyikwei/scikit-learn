@@ -27,7 +27,7 @@ from sklearn.metrics import recall_score
 
 from sklearn.preprocessing import LabelBinarizer
 
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import (LinearRegression, Lasso, ElasticNet, Ridge,
                                   Perceptron, LogisticRegression)
@@ -94,7 +94,7 @@ def test_ovr_fit_predict_sparse():
                                                        random_state=0)
 
         X_train, Y_train = X[:80], Y[:80]
-        X_test, Y_test = X[80:], Y[80:]
+        X_test = X[80:]
 
         clf = OneVsRestClassifier(base_clf).fit(X_train, Y_train)
         Y_pred = clf.predict(X_test)
@@ -186,19 +186,32 @@ def test_ovr_binary():
 
     classes = set("eggs spam".split())
 
-    for base_clf in (MultinomialNB(), LinearSVC(random_state=0),
-                     LinearRegression(), Ridge(),
-                     ElasticNet()):
-
+    def conduct_test(base_clf, test_predict_proba=False):
         clf = OneVsRestClassifier(base_clf).fit(X, y)
         assert_equal(set(clf.classes_), classes)
         y_pred = clf.predict(np.array([[0, 0, 4]]))[0]
         assert_equal(set(y_pred), set("eggs"))
 
+        if test_predict_proba:
+            X_test = np.array([[0, 0, 4]])
+            probabilities = clf.predict_proba(X_test)
+            assert_equal(2, len(probabilities[0]))
+            assert_equal(clf.classes_[np.argmax(probabilities, axis=1)],
+                         clf.predict(X_test))
+
         # test input as label indicator matrix
         clf = OneVsRestClassifier(base_clf).fit(X, Y)
         y_pred = clf.predict([[3, 0, 0]])[0]
         assert_equal(y_pred, 1)
+
+    for base_clf in (LinearSVC(random_state=0), LinearRegression(),
+                     Ridge(), ElasticNet()):
+        conduct_test(base_clf)
+
+    for base_clf in (MultinomialNB(), SVC(probability=True),
+                     LogisticRegression()):
+        conduct_test(base_clf, test_predict_proba=True)
+
 
 @ignore_warnings
 def test_ovr_multilabel():
@@ -278,7 +291,7 @@ def test_ovr_multilabel_predict_proba():
                                                        return_indicator=True,
                                                        random_state=0)
         X_train, Y_train = X[:80], Y[:80]
-        X_test, Y_test = X[80:], Y[80:]
+        X_test = X[80:]
         clf = OneVsRestClassifier(base_clf).fit(X_train, Y_train)
 
         # decision function only estimator. Fails in current implementation.
@@ -303,7 +316,7 @@ def test_ovr_single_label_predict_proba():
     base_clf = MultinomialNB(alpha=1)
     X, Y = iris.data, iris.target
     X_train, Y_train = X[:80], Y[:80]
-    X_test, Y_test = X[80:], Y[80:]
+    X_test = X[80:]
     clf = OneVsRestClassifier(base_clf).fit(X_train, Y_train)
 
     # decision function only estimator. Fails in current implementation.
@@ -330,7 +343,7 @@ def test_ovr_multilabel_decision_function():
                                                    return_indicator=True,
                                                    random_state=0)
     X_train, Y_train = X[:80], Y[:80]
-    X_test, Y_test = X[80:], Y[80:]
+    X_test = X[80:]
     clf = OneVsRestClassifier(svm.SVC()).fit(X_train, Y_train)
     assert_array_equal((clf.decision_function(X_test) > 0).astype(int),
                        clf.predict(X_test))
@@ -341,7 +354,7 @@ def test_ovr_single_label_decision_function():
                                         n_features=20,
                                         random_state=0)
     X_train, Y_train = X[:80], Y[:80]
-    X_test, Y_test = X[80:], Y[80:]
+    X_test = X[80:]
     clf = OneVsRestClassifier(svm.SVC()).fit(X_train, Y_train)
     assert_array_equal(clf.decision_function(X_test).ravel() > 0,
                        clf.predict(X_test))
@@ -391,6 +404,16 @@ def test_ovr_coef_exceptions():
 def test_ovo_exceptions():
     ovo = OneVsOneClassifier(LinearSVC(random_state=0))
     assert_raises(ValueError, ovo.predict, [])
+
+
+def test_ovo_fit_on_list():
+    # Test that OneVsOne fitting works with a list of targets and yields the
+    # same output as predict from an array
+    ovo = OneVsOneClassifier(LinearSVC(random_state=0))
+    prediction_from_array = ovo.fit(iris.data, iris.target).predict(iris.data)
+    prediction_from_list = ovo.fit(iris.data,
+                                   list(iris.target)).predict(iris.data)
+    assert_array_equal(prediction_from_array, prediction_from_list)
 
 
 def test_ovo_fit_predict():
@@ -498,12 +521,13 @@ def test_ecoc_gridsearch():
     best_C = cv.best_estimator_.estimators_[0].C
     assert_true(best_C in Cs)
 
+
 @ignore_warnings
 def test_deprecated():
     base_estimator = DecisionTreeClassifier(random_state=0)
     X, Y = iris.data, iris.target
     X_train, Y_train = X[:80], Y[:80]
-    X_test, Y_test = X[80:], Y[80:]
+    X_test = X[80:]
 
     all_metas = [
         (OneVsRestClassifier, fit_ovr, predict_ovr, predict_proba_ovr),
@@ -522,10 +546,10 @@ def test_deprecated():
             meta_est = MetaEst(base_estimator).fit(X_train, Y_train)
             fitted_return = fit_func(base_estimator, X_train, Y_train)
 
-
         if len(fitted_return) == 2:
             estimators_, classes_or_lb = fitted_return
-            assert_almost_equal(predict_func(estimators_, classes_or_lb, X_test),
+            assert_almost_equal(predict_func(estimators_, classes_or_lb,
+                                             X_test),
                                 meta_est.predict(X_test))
 
             if proba_func is not None:

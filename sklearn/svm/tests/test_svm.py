@@ -46,9 +46,7 @@ def test_libsvm_parameters():
 
 
 def test_libsvm_iris():
-    """
-    Check consistency on dataset iris.
-    """
+    """Check consistency on dataset iris."""
 
     # shuffle the dataset so that labels are not ordered
     for k in ('linear', 'rbf'):
@@ -72,6 +70,15 @@ def test_libsvm_iris():
                                        kernel='linear',
                                        random_seed=0)
     assert_greater(np.mean(pred == iris.target), .95)
+
+    # If random_seed >= 0, the libsvm rng is seeded (by calling `srand`), hence
+    # we should get deteriministic results (assuming that there is no other
+    # thread calling this wrapper calling `srand` concurrently).
+    pred2 = svm.libsvm.cross_validation(iris.data,
+                                       iris.target.astype(np.float64), 5,
+                                       kernel='linear',
+                                       random_seed=0)
+    assert_array_equal(pred, pred2)
 
 
 def test_single_sample_1d():
@@ -167,13 +174,31 @@ def test_svr():
     diabetes = datasets.load_diabetes()
     for clf in (svm.NuSVR(kernel='linear', nu=.4, C=1.0),
                 svm.NuSVR(kernel='linear', nu=.4, C=10.),
-                svm.SVR(kernel='linear', C=10.)):
+                svm.SVR(kernel='linear', C=10.),
+                svm.LinearSVR(C=10.),
+                svm.LinearSVR(C=10.),
+                ):
         clf.fit(diabetes.data, diabetes.target)
         assert_greater(clf.score(diabetes.data, diabetes.target), 0.02)
 
     # non-regression test; previously, BaseLibSVM would check that
     # len(np.unique(y)) < 2, which must only be done for SVC
     svm.SVR().fit(diabetes.data, np.ones(len(diabetes.data)))
+    svm.LinearSVR().fit(diabetes.data, np.ones(len(diabetes.data)))
+
+
+def test_linearsvr():
+    # check that SVR(kernel='linear') and LinearSVC() give
+    # comparable results
+    diabetes = datasets.load_diabetes()
+    lsvr = svm.LinearSVR(C=1e3).fit(diabetes.data, diabetes.target)
+    score1 = lsvr.score(diabetes.data, diabetes.target)
+
+    svr = svm.SVR(kernel='linear', C=1e3).fit(diabetes.data, diabetes.target)
+    score2 = svr.score(diabetes.data, diabetes.target)
+
+    assert np.linalg.norm(lsvr.coef_ - svr.coef_) / np.linalg.norm(svr.coef_) < .1
+    assert np.abs(score1 - score2) < 0.1
 
 
 def test_svr_errors():
@@ -367,8 +392,9 @@ def test_auto_weight():
         y_pred = clf.fit(X[unbalanced], y[unbalanced]).predict(X)
         clf.set_params(class_weight='auto')
         y_pred_balanced = clf.fit(X[unbalanced], y[unbalanced],).predict(X)
-        assert_true(metrics.f1_score(y, y_pred)
-                    <= metrics.f1_score(y, y_pred_balanced))
+        assert_true(metrics.f1_score(y, y_pred, average='weighted')
+                    <= metrics.f1_score(y, y_pred_balanced,
+                                        average='weighted'))
 
 
 def test_bad_input():
@@ -438,13 +464,13 @@ def test_linearsvc_parameters():
     X, y = make_classification(n_samples=5, n_features=5)
 
     for dual, loss, penalty in params:
-            clf = svm.LinearSVC(penalty=penalty, loss=loss, dual=dual)
-            if (loss == 'l1' and penalty == 'l1') or (
-                loss == 'l1' and penalty == 'l2' and not dual) or (
-                penalty == 'l1' and dual):
-                assert_raises(ValueError, clf.fit, X, y)
-            else:
-                clf.fit(X, y)
+        clf = svm.LinearSVC(penalty=penalty, loss=loss, dual=dual)
+        if (loss == 'l1' and penalty == 'l1') or (
+            loss == 'l1' and penalty == 'l2' and not dual) or (
+            penalty == 'l1' and dual):
+            assert_raises(ValueError, clf.fit, X, y)
+        else:
+            clf.fit(X, y)
 
 
 def test_linearsvc():
@@ -690,6 +716,19 @@ def test_linear_svc_convergence_warnings():
     lsvc = svm.LinearSVC(max_iter=2, verbose=1)
     assert_warns(ConvergenceWarning, lsvc.fit, X, Y)
     assert_equal(lsvc.n_iter_, 2)
+
+
+def test_svr_coef_sign():
+    """Test that SVR(kernel="linear") has coef_ with the right sign."""
+    # Non-regression test for #2933.
+    X = np.random.RandomState(21).randn(10, 3)
+    y = np.random.RandomState(12).randn(10)
+
+    for svr in [svm.SVR(kernel='linear'), svm.NuSVR(kernel='linear'),
+                svm.LinearSVR()]:
+        svr.fit(X, y)
+        assert_array_almost_equal(svr.predict(X),
+                                  np.dot(X, svr.coef_.ravel()) + svr.intercept_)
 
 
 if __name__ == '__main__':

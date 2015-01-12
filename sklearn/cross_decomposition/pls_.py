@@ -14,6 +14,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy import linalg
 from ..utils import arpack
+from ..utils.validation import check_is_fitted
 
 __all__ = ['PLSCanonical', 'PLSRegression', 'PLSSVD']
 
@@ -39,7 +40,7 @@ def _nipals_twoblocks_inner_loop(X, Y, mode="A", max_iter=500, tol=1e-06,
                 X_pinv = linalg.pinv(X)   # compute once pinv(X)
             x_weights = np.dot(X_pinv, y_score)
         else:  # mode A
-        # Mode A regress each X column on y_score
+            # Mode A regress each X column on y_score
             x_weights = np.dot(X.T, y_score) / np.dot(y_score.T, y_score)
         # 1.2 Normalize u
         x_weights /= np.sqrt(np.dot(x_weights.T, x_weights))
@@ -178,8 +179,8 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
     y_rotations_ : array, [q, n_components]
         Y block to latents rotations.
 
-    coefs: array, [p, q]
-        The coefficients of the linear model: Y = X coefs + Err
+    coef_: array, [p, q]
+        The coefficients of the linear model: Y = X coef_ + Err
 
     n_iter_ : array-like
         Number of iterations of the NIPALS inner loop for each
@@ -235,16 +236,14 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
         # copy since this will contains the residuals (deflated) matrices
         check_consistent_length(X, Y)
         X = check_array(X, dtype=np.float, copy=self.copy)
-        Y = check_array(Y, dtype=np.float, copy=self.copy)
+        Y = check_array(Y, dtype=np.float, copy=self.copy, ensure_2d=False)
+        if Y.ndim == 1:
+            Y = Y[:, None]
 
         n = X.shape[0]
         p = X.shape[1]
         q = Y.shape[1]
 
-        if n != Y.shape[0]:
-            raise ValueError(
-                'Incompatible shapes: X has %s samples, while Y '
-                'has %s' % (X.shape[0], Y.shape[0]))
         if self.n_components < 1 or self.n_components > p:
             raise ValueError('invalid number of components')
         if self.algorithm not in ("svd", "nipals"):
@@ -327,11 +326,11 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
         # U = Y C(Q'C)^-1 = YC* (W* : q x k matrix)
         self.x_rotations_ = np.dot(
             self.x_weights_,
-            linalg.inv(np.dot(self.x_loadings_.T, self.x_weights_)))
+            linalg.pinv(np.dot(self.x_loadings_.T, self.x_weights_)))
         if Y.shape[1] > 1:
             self.y_rotations_ = np.dot(
                 self.y_weights_,
-                linalg.inv(np.dot(self.y_loadings_.T, self.y_weights_)))
+                linalg.pinv(np.dot(self.y_loadings_.T, self.y_weights_)))
         else:
             self.y_rotations_ = np.ones(1)
 
@@ -342,8 +341,8 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
             # Then express in function of X
             # Y = X W(P'W)^-1Q' + Err = XB + Err
             # => B = W*Q' (p x q)
-            self.coefs = np.dot(self.x_rotations_, self.y_loadings_.T)
-            self.coefs = (1. / self.x_std_.reshape((p, 1)) * self.coefs *
+            self.coef_ = np.dot(self.x_rotations_, self.y_loadings_.T)
+            self.coef_ = (1. / self.x_std_.reshape((p, 1)) * self.coef_ *
                           self.y_std_)
         return self
 
@@ -367,6 +366,7 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
         -------
         x_scores if Y is not given, (x_scores, y_scores) otherwise.
         """
+        check_is_fitted(self, 'x_mean_')
         # Normalize
         if copy:
             Xc = (np.asarray(X) - self.x_mean_) / self.x_std_
@@ -405,6 +405,7 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
         This call requires the estimation of a p x q matrix, which may
         be an issue in high dimensional space.
         """
+        check_is_fitted(self, 'x_mean_')
         # Normalize
         if copy:
             Xc = (np.asarray(X) - self.x_mean_)
@@ -412,7 +413,7 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
             X = np.asarray(X)
             Xc -= self.x_mean_
             Xc /= self.x_std_
-        Ypred = np.dot(Xc, self.coefs)
+        Ypred = np.dot(Xc, self.coef_)
         return Ypred + self.y_mean_
 
     def fit_transform(self, X, y=None, **fit_params):
@@ -435,6 +436,7 @@ class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
         -------
         x_scores if Y is not given, (x_scores, y_scores) otherwise.
         """
+        check_is_fitted(self, 'x_mean_')
         return self.fit(X, y, **fit_params).transform(X, y)
 
 
@@ -452,7 +454,7 @@ class PLSRegression(_PLS):
         Training vectors, where n_samples in the number of samples and
         p is the number of predictors.
 
-    Y : array-like of response, shape = [n_samples, q]
+    Y : array-like of response, shape = [n_samples, q] or [n_samples]
         Training vectors, where n_samples in the number of samples and
         q is the number of response variables.
 
@@ -499,8 +501,8 @@ class PLSRegression(_PLS):
     y_rotations_ : array, [q, n_components]
         Y block to latents rotations.
 
-    coefs: array, [p, q]
-        The coefficients of the linear model: Y = X coefs + Err
+    coef_: array, [p, q]
+        The coefficients of the linear model: Y = X coef_ + Err
 
     n_iter_ : array-like
         Number of iterations of the NIPALS inner loop for each
@@ -558,6 +560,14 @@ class PLSRegression(_PLS):
                       deflation_mode="regression", mode="A",
                       norm_y_weights=False, max_iter=max_iter, tol=tol,
                       copy=copy)
+
+    @property
+    def coefs(self):
+        check_is_fitted(self, 'coef_')
+        DeprecationWarning("'coefs' attribute has been deprecated and will be "
+                           "removed in version 0.17. Use 'coef_' instead")
+        return self.coef_
+
 
 
 class PLSCanonical(_PLS):
@@ -768,6 +778,7 @@ class PLSSVD(BaseEstimator, TransformerMixin):
 
     def transform(self, X, Y=None):
         """Apply the dimension reduction learned on the train data."""
+        check_is_fitted(self, 'x_mean_')
         Xr = (X - self.x_mean_) / self.x_std_
         x_scores = np.dot(Xr, self.x_weights_)
         if Y is not None:

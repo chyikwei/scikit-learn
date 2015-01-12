@@ -20,6 +20,7 @@ from ..metrics.pairwise import PAIRWISE_DISTANCE_FUNCTIONS
 from ..utils import check_X_y, check_array
 from ..utils.fixes import argpartition
 from ..utils.validation import DataConversionWarning
+from ..utils.validation import NotFittedError
 from ..externals import six
 
 
@@ -298,7 +299,7 @@ class KNeighborsMixin(object):
 
         """
         if self._fit_method is None:
-            raise ValueError("must fit neighbors before querying")
+            raise NotFittedError("Must fit neighbors before querying.")
 
         X = check_array(X, accept_sparse='csr')
 
@@ -328,6 +329,10 @@ class KNeighborsMixin(object):
             else:
                 return neigh_ind
         elif self._fit_method in ['ball_tree', 'kd_tree']:
+            if issparse(X):
+                raise ValueError(
+                    "%s does not work with sparse matrices. Densify the data, "
+                    "or set algorithm='brute'" % self._fit_method)
             result = self._tree.query(X, n_neighbors,
                                       return_distance=return_distance)
             return result
@@ -459,9 +464,8 @@ class RadiusNeighborsMixin(object):
         For efficiency, `radius_neighbors` returns arrays of objects, where
         each object is a 1D array of indices or distances.
         """
-
         if self._fit_method is None:
-            raise ValueError("must fit neighbors before querying")
+            raise NotFittedError("Must fit neighbors before querying.")
 
         X = check_array(X, accept_sparse='csr')
 
@@ -503,6 +507,10 @@ class RadiusNeighborsMixin(object):
             else:
                 return neigh_ind
         elif self._fit_method in ['ball_tree', 'kd_tree']:
+            if issparse(X):
+                raise ValueError(
+                    "%s does not work with sparse matrices. Densify the data, "
+                    "or set algorithm='brute'" % self._fit_method)
             results = self._tree.query_radius(X, radius,
                                               return_distance=return_distance)
             if return_distance:
@@ -578,10 +586,9 @@ class RadiusNeighborsMixin(object):
                 'or "distance" but got %s instead' % mode)
 
         n_neighbors = np.array([len(a) for a in A_ind])
-        n_nonzero = np.sum(n_neighbors)
-        if A_data is None:
-            A_data = np.ones(n_nonzero)
         A_ind = np.concatenate(list(A_ind))
+        if A_data is None:
+            A_data = np.ones(len(A_ind))
         A_indptr = np.concatenate((np.zeros(1, dtype=int),
                                    np.cumsum(n_neighbors)))
 

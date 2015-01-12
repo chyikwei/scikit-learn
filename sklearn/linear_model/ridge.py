@@ -29,7 +29,7 @@ from ..externals import six
 from ..metrics.scorer import check_scoring
 
 
-def _solve_sparse_cg(X, y, alpha, max_iter=None, tol=1e-3):
+def _solve_sparse_cg(X, y, alpha, max_iter=None, tol=1e-3, verbose=0):
     n_samples, n_features = X.shape
     X1 = sp_linalg.aslinearoperator(X)
     coefs = np.empty((y.shape[1], n_features))
@@ -64,8 +64,12 @@ def _solve_sparse_cg(X, y, alpha, max_iter=None, tol=1e-3):
                 (n_features, n_features), matvec=mv, dtype=X.dtype)
             coefs[i], info = sp_linalg.cg(C, y_column, maxiter=max_iter,
                                           tol=tol)
-        if info != 0:
+        if info < 0:
             raise ValueError("Failed with error code %d" % info)
+
+        if max_iter is None and info > 0 and verbose:
+            warnings.warn("sparse_cg did not converge after %d iterations." %
+                          info)
 
     return coefs
 
@@ -178,16 +182,16 @@ def _solve_svd(X, y, alpha):
 
 def _deprecate_dense_cholesky(solver):
     if solver == 'dense_cholesky':
-        warnings.warn(DeprecationWarning("The name 'dense_cholesky' is "
-                                         "deprecated. Using 'cholesky' "
-                                         "instead. Changed in 0.15"))
+        warnings.warn(DeprecationWarning(
+            "The name 'dense_cholesky' is deprecated and will "
+            "be removed in 0.17. Use 'cholesky' instead. "))
         solver = 'cholesky'
 
     return solver
 
 
 def ridge_regression(X, y, alpha, sample_weight=None, solver='auto',
-                     max_iter=None, tol=1e-3):
+                     max_iter=None, tol=1e-3, verbose=0):
     """Solve the ridge equation by the method of normal equations.
 
     Parameters
@@ -236,12 +240,16 @@ def ridge_regression(X, y, alpha, sample_weight=None, solver='auto',
 
         All three solvers support both dense and sparse data.
 
-    tol: float
+    tol : float
         Precision of the solution.
+
+    verbose : int
+        Verbosity level. Setting verbose > 0 will display additional information
+        depending on the solver used.
 
     Returns
     -------
-    coef: array, shape = [n_features] or [n_targets, n_features]
+    coef : array, shape = [n_features] or [n_targets, n_features]
         Weight vector(s).
 
     Notes
@@ -306,7 +314,7 @@ def ridge_regression(X, y, alpha, sample_weight=None, solver='auto',
         raise ValueError('Solver %s not understood' % solver)
 
     if solver == 'sparse_cg':
-        coef = _solve_sparse_cg(X, y, alpha, max_iter, tol)
+        coef = _solve_sparse_cg(X, y, alpha, max_iter, tol, verbose)
 
     elif solver == "lsqr":
         coef = _solve_lsqr(X, y, alpha, max_iter, tol)
@@ -331,6 +339,9 @@ def ridge_regression(X, y, alpha, sample_weight=None, solver='auto',
                 solver = 'svd'
 
     if solver == 'svd':
+        if sparse.issparse(X):
+            raise TypeError('SVD solver does not support sparse'
+                            ' inputs currently')
         coef = _solve_svd(X, y, alpha)
 
     if ravel:
@@ -877,7 +888,7 @@ class RidgeCV(_BaseRidgeCV, RegressorMixin):
 
     Parameters
     ----------
-    alphas: numpy array of shape [n_alphas]
+    alphas : numpy array of shape [n_alphas]
         Array of alpha values to try.
         Small positive values of alpha improve the conditioning of the
         problem and reduce the variance of the estimates.
@@ -897,9 +908,12 @@ class RidgeCV(_BaseRidgeCV, RegressorMixin):
         a scorer callable object / function with signature
         ``scorer(estimator, X, y)``.
 
-    cv : cross-validation generator, optional
+    cv : integer or cross-validation generator, optional
         If None, Generalized Cross-Validation (efficient Leave-One-Out)
         will be used.
+        If an integer is passed, it is the number of folds for KFold cross
+        validation.  Specific cross-validation objects can be passed, see
+        sklearn.cross_validation module for the list of possible objects
 
     gcv_mode : {None, 'auto', 'svd', eigen'}, optional
         Flag indicating which strategy to use when performing
@@ -958,7 +972,7 @@ class RidgeClassifierCV(LinearClassifierMixin, _BaseRidgeCV):
 
     Parameters
     ----------
-    alphas: numpy array of shape [n_alphas]
+    alphas : numpy array of shape [n_alphas]
         Array of alpha values to try.
         Small positive values of alpha improve the conditioning of the
         problem and reduce the variance of the estimates.

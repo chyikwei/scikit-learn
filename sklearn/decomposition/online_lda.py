@@ -24,7 +24,7 @@ from ..externals.joblib import Parallel, delayed, cpu_count
 from ..externals.six.moves import xrange
 
 from ._online_lda import (mean_change, _dirichlet_expectation_1d,
-                         _dirichlet_expectation_2d)
+                          _dirichlet_expectation_2d)
 
 
 def _dirichlet_expectation(alpha):
@@ -132,7 +132,11 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     batch_size: int, optional (default: 128)
         Number of document to udpate in each EM-step
 
-    normalize_doc: boolean, optional (default: True)
+    evaluate_every: int optional (default: 5)
+        How many iterations to evaluate preplexity once. Only used in batch learning yet.
+        set it to `-1` to not evalute preplexity in training at all.
+
+    normalize_doc: boolean, optional (default: False)
         normalize the topic distribution for transformed document or not.
         if True, sum of topic distribution for each document will be 1.0
 
@@ -170,7 +174,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     """
 
     def __init__(self, n_topics=10, alpha=.1, eta=.1, kappa=.7, tau=1000.,
-                 batch_size=128, n_docs=1e6, normalize_doc=True,
+                 batch_size=128, evaluate_every=5, n_docs=1e6, normalize_doc=False,
                  e_step_tol=1e-3, prex_tol=1e-1, mean_change_tol=1e-3,
                  max_gamma_update_iter=100, n_jobs=1, verbose=0, random_state=None):
         self.n_topics = n_topics
@@ -179,6 +183,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         self.kappa = kappa
         self.tau = tau
         self.batch_size = batch_size
+        self.evaluate_every = evaluate_every
         self.n_docs = n_docs
         self.normalize_doc = normalize_doc
         self.e_step_tol = e_step_tol
@@ -190,6 +195,9 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         self.random_state = random_state
 
     def _init_latent_vars(self, n_vocabs):
+        """
+        initialize latent variables
+        """
         self.rng = check_random_state(self.random_state)
         self.n_iter_ = 1
         self.n_vocabs = n_vocabs
@@ -376,6 +384,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         X = self._to_csr(X)
         n_docs, n_vocabs = X.shape
+        evaluate_every = self.evaluate_every
 
         # initialize parameters
         self._init_latent_vars(n_vocabs)
@@ -384,15 +393,15 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         last_bound = None
         for i in xrange(max_iters):
             gamma = self._em_step(X, batch_update=True)
-
             # check preplexity
-            bound = self.preplexity(X, gamma, sub_sampling=False)
-            if self.verbose:
-                print('iteration: %d, preplexity: %.4f' % (i, bound))
+            if evaluate_every > 0 and (i + 1) % evaluate_every == 0:
+                bound = self.preplexity(X, gamma, sub_sampling=False)
+                if self.verbose:
+                    print('iteration: %d, preplexity: %.4f' % (i + 1, bound))
 
-            if i > 0 and abs(last_bound - bound) < self.prex_tol:
-                break
-            last_bound = bound
+                if last_bound and abs(last_bound - bound) < self.prex_tol:
+                    break
+                last_bound = bound
 
         return self
 

@@ -8,6 +8,8 @@ from sklearn.utils.testing import raises
 from sklearn.utils.testing import assert_array_almost_equal
 from sklearn.utils.testing import assert_greater_equal
 from sklearn.utils.testing import if_not_mac_os
+
+from sklearn.utils.validation import NotFittedError
 from sklearn.externals.six.moves import xrange
 
 
@@ -96,7 +98,7 @@ def test_lda_normalize_docs():
     rng = np.random.RandomState(0)
     n_topics, alpha, eta, X = _build_sparse_mtx()
     lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    random_state=rng)
+                                    random_state=rng, normalize_doc=True)
     X_fit = lda.fit_transform(X)
     assert_array_almost_equal(X_fit.sum(axis=1), np.ones(X.shape[0]))
 
@@ -119,7 +121,7 @@ def test_lda_partial_fit_dim_mismatch():
         lda.partial_fit(X)
 
 
-@raises(AttributeError)
+@raises(NotFittedError)
 def test_lda_transform_before_fit():
     """
     test `transform` before `fit`

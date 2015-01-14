@@ -106,69 +106,69 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    n_topics: int, optional (default: 10)
+    n_topics : int, optional (default: 10)
         number of topics.
 
-    alpha: float, optional (defalut: 0.1)
+    alpha : float, optional (defalut: 0.1)
         Hyperparameter for prior on weight vectors theta. In general, it is `1 / n_topics`.
 
-    eta: float, optional (default: 0.1)
+    eta : float, optional (default: 0.1)
         Hyperparameter for prior on topics beta. In general, it is `1 / n_topics`.
 
-    kappa: float, optional (default: 0.7)
+    kappa : float, optional (default: 0.7)
         weight for _component: it controls the weight for previous value of _component.
         The value hould be between (0.5, 1.0] to guarantee asymptotic convergence for online learning.
         It is only used in partial_fit.
         When we set kappa to 0.0 and batch_size to n_docs, then the udpate is batch VB.
 
-    tau: float, optional (default: 1024.)
+    tau : float, optional (default: 1024.)
         A (positive) learning parameter that downweights early iterations. It should be greater than 1.0.
         It is only used in partial_fit
 
-    n_docs: int, optional (default: 1e6)
+    n_docs : int, optional (default: 1e6)
         Total umber of document. It is only used in online learing(partial_fit).
         In batch learning, n_docs is X.shape[0]
 
-    batch_size: int, optional (default: 128)
+    batch_size : int, optional (default: 128)
         Number of document to udpate in each EM-step
 
-    evaluate_every: int optional (default: 5)
+    evaluate_every : int optional (default: 5)
         How many iterations to evaluate preplexity once. Only used in batch learning yet.
-        set it to `-1` to not evalute preplexity in training at all.
+        set it to -1 to not evalute preplexity in training at all.
 
-    normalize_doc: boolean, optional (default: False)
+    normalize_doc : boolean, optional (default: False)
         normalize the topic distribution for transformed document or not.
         if True, sum of topic distribution for each document will be 1.0
 
-    e_step_tol: float, optional (default: 1e-4)
+    e_step_tol : float, optional (default: 1e-4)
         Tolerance value used in e-step break conditions.
 
-    prex_tol: float, optional (default: 1e-1)
+    prex_tol : float, optional (default: 1e-1)
         Tolerance value used in preplexity break conditions.
 
-    mean_change_tol: float, optional (default: 1e-3)
+    mean_change_tol : float, optional (default: 1e-3)
         Tolerance value used in e-step break conditions.
 
-    max_gamma_update_iter: int (default: 100)
+    max_gamma_update_iter : int (default: 100)
         Max number of iterations for updating gamma values.
 
-    n_jobs: int, optional (default: 1)
+    n_jobs : int, optional (default: 1)
         Number of parallel jobs to run on e-step. -1 for autodetect.
 
     verbose : int, optional (default: 0)
         Verbosity level.
 
-    random_state: int or RandomState instance or None, optional (default: None)
+    random_state : int or RandomState instance or None, optional (default: None)
         Pseudo Random Number generator seed control.
 
 
     Attributes
     ----------
-    components_: array, [n_topics, n_vocabs]
+    components_ : array, [n_topics, n_vocabs]
         vocab distribution for each topic. components_[i, j] represents
         vocab `j` in topic `i`
 
-    n_iter_: int
+    n_iter_ : int
         number of iteration
 
     """
@@ -250,13 +250,13 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     def _em_step(self, X, batch_update):
         """
         EM update for 1 iteration
+        update `_component` by bath VB or online VB
 
         parameters
         ----------
-        X:  sparse matrix
+        X :  sparse matrix
 
-        batch_update: boolean
-        update `_component` by bath VB or online VB
+        batch_update : boolean
         """
         # e-step
         gamma, delta_component = self._e_step(X, cal_delta=True)
@@ -281,6 +281,11 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     def _to_csr(self, X):
         """
         check & convert X to csr format
+
+        parameters
+        ----------
+        X :  array-like
+
         """
         X = check_array(X, accept_sparse='csr')
         if not sp.issparse(X):
@@ -294,41 +299,16 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: array or sparse matrix, shape = [n_docs, n_vocabs]
+        X : array or sparse matrix, shape = [n_docs, n_vocabs]
             Data matrix to be transformed by the model
 
-        max_iters: int, (default: 10)
+        max_iters : int, (default: 10)
             Max number of iterations
 
         Returns
         -------
-        gamma: array, [n_dics, n_topics]
+        gamma : array, [n_dics, n_topics]
             Topic distribution for each doc
-        """
-
-        """
-        X = self._to_csr(X)
-        n_docs, n_vocabs = X.shape
-
-        if not hasattr(self, 'components_'):
-            # initialize vocabulary & latent variables
-
-            self.Elogbeta = _dirichlet_expectation(self.components_)
-            self.expElogbeta = np.exp(self.Elogbeta)
-        else:
-            # make sure vacabulary size matched
-            if self.components_.shape[1] != X.shape[1]:
-                raise ValueError("dimension not match")
-
-        # EM update
-        gamma, delta_component = self._e_step(X)
-        # self._m_step(delta_component, self.n_docs, n_docs)
-        self._m_step(delta_component, self.n_docs, n_docs)
-
-        if self.normalize_doc:
-            gamma /= gamma.sum(axis=1)[:, np.newaxis]
-
-        return gamma
         """
         X = self._to_csr(X)
         return self.fit(X, max_iters).transform(X)
@@ -339,7 +319,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_docs, n_vocabs]
             Data matrix to be decomposed
 
         Returns
@@ -371,10 +351,10 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, shape = (n_docs, n_vocabs)
+        X : sparse matrix, shape = (n_docs, n_vocabs)
             Data matrix to be transformed by the model
 
-        max_iters: int, (default: 10)
+        max_iters : int, (default: 10)
             Max number of iterations
 
         Returns
@@ -411,16 +391,16 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_docs, n_vocabs]
             Data matrix to be transformed by the model
             n_vacabs must be the same as n_vocabs in fitted model
 
-        max_iters: int, (default: 20)
+        max_iters : int, (default: 20)
             Max number of iterations
 
         Returns
         -------
-        data: array, [n_docs, n_topics]
+        data : array, [n_docs, n_topics]
             Document distribution
         """
 
@@ -440,7 +420,6 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         if self.normalize_doc:
             gamma /= gamma.sum(axis=1)[:, np.newaxis]
-
         return gamma
 
     def _approx_bound(self, X, gamma, sub_sampling):
@@ -451,18 +430,18 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, [n_docs, n_vocabs]
+        X : sparse matrix, [n_docs, n_vocabs]
 
-        gamma: array, shape = [n_docs, n_topics]
+        gamma : array, shape = [n_docs, n_topics]
             document distribution (can be either normalized & un-normalized)
 
-        sub_sampling: boolean, optional, (default: False)
+        sub_sampling : boolean, optional, (default: False)
             Compensate for the subsampling of the population of documents
             set subsampling to `True` for online learning
 
         Returns
         -------
-        score: float, score of gamma
+        score : float, score of gamma
         """
         X = self._to_csr(X)
         n_docs, n_topics = gamma.shape
@@ -511,18 +490,18 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_docs, n_vocabs]
 
         Returns
         -------
-        perword_bound: float
-            Average per word bound for current model
+        score : float
+            use approximate bound as score
         """
 
         X = self._to_csr(X)
         gamma = self.transform(X)
-        bound = self._approx_bound(X, gamma, sub_sampling=False)
-        return bound
+        score = self._approx_bound(X, gamma, sub_sampling=False)
+        return score
 
     def preplexity(self, X, gamma, sub_sampling=False):
         """
@@ -531,14 +510,14 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: sparse matrix, [n_docs, n_vocabs]
+        X : sparse matrix, [n_docs, n_vocabs]
 
-        gamma: array, shape = [n_docs, n_topics]
+        gamma : array, shape = [n_docs, n_topics]
             document distribution (can be either normalized & un-normalized)
 
         Returns
         -------
-        score: float, score of gamma
+        score : float, score of gamma
         """
         X = self._to_csr(X)
         n_doc = X.shape[0]

@@ -6,6 +6,7 @@ from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.utils.testing import assert_true
 from sklearn.utils.testing import raises
 from sklearn.utils.testing import assert_array_almost_equal
+from sklearn.utils.testing import assert_almost_equal
 from sklearn.utils.testing import assert_greater_equal
 from sklearn.utils.testing import if_not_mac_os
 
@@ -202,6 +203,41 @@ def test_lda_preplexity():
     distr_2 = lda_2.fit_transform(X, max_iters=10)
     prep_2 = lda_2.preplexity(X, distr_2, sub_sampling=False)
     assert_greater_equal(prep_1, prep_2)
+
+
+def test_lda_score():
+    """
+    Test LDA score for batch training
+    score should be higher after each iteration
+    """
+    n_topics, alpha, eta, X = _build_sparse_mtx()
+    lda_1 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                      random_state=0)
+    lda_2 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                      random_state=0)
+
+    lda_1.fit_transform(X, max_iters=1)
+    score_1 = lda_1.score(X)
+
+    lda_2.fit_transform(X, max_iters=10)
+    score_2 = lda_2.score(X)
+    assert_greater_equal(score_2, score_1)
+
+
+def test_lda_score_preplexity():
+    """
+    Test the relationship between LDA score and preplexity
+    """
+    n_topics, alpha, eta, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
+                                    random_state=0)
+
+    distr = lda.fit_transform(X, max_iters=10)
+    preplexity_1 = lda.preplexity(X, distr, sub_sampling=False)
+
+    score = lda.score(X)
+    preplexity_2 = np.exp(-1. * (score / np.sum(X.data)))
+    assert_almost_equal(preplexity_1, preplexity_2)
 
 
 if __name__ == '__main__':

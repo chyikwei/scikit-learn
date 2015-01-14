@@ -446,7 +446,8 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     def _approx_bound(self, X, gamma, sub_sampling):
         """
         calculate approximate bound for data X and topic distribution gamma
-
+        Since log-likelihood cannot be computed directly, we use this bound
+        estimate it.
 
         Parameters
         ----------
@@ -504,10 +505,29 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         return score
 
+    def score(self, X, y=None):
+        """
+        use approximate log-likelihood as score
+
+        Parameters
+        ----------
+        X: sparse matrix, [n_docs, n_vocabs]
+
+        Returns
+        -------
+        perword_bound: float
+            Average per word bound for current model
+        """
+
+        X = self._to_csr(X)
+        gamma = self.transform(X)
+        bound = self._approx_bound(X, gamma, sub_sampling=False)
+        return bound
+
     def preplexity(self, X, gamma, sub_sampling=False):
         """
-        calculate approximate bound for data X and topic distribution gamma
-
+        calculate approximate preplexity for data X and topic distribution gamma
+        preplexity is defined as exp(-1. * log-likelihood per word)
 
         Parameters
         ----------

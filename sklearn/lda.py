@@ -158,6 +158,12 @@ class LDA(BaseEstimator, LinearClassifierMixin, TransformerMixin):
     n_components : int, optional
         Number of components (< n_classes - 1) for dimensionality reduction.
 
+    store_covariance : bool, optional
+        Additionally compute class covariance matrix (default False).
+
+    tol : float, optional
+        Threshold used for rank estimation in SVD solver.
+
     Attributes
     ----------
     coef_ : array, shape (n_features,) or (n_classes, n_features)
@@ -376,7 +382,7 @@ class LDA(BaseEstimator, LinearClassifierMixin, TransformerMixin):
         rank = np.sum(S > tol * S[0])
         self.scalings_ = np.dot(scalings, V.T[:, :rank])
         coef = np.dot(self.means_ - self.xbar_, self.scalings_)
-        self.intercept_ = (-0.5 * np.sum(coef**2, axis=1)
+        self.intercept_ = (-0.5 * np.sum(coef ** 2, axis=1)
                            + np.log(self.priors_))
         self.coef_ = np.dot(coef, self.scalings_.T)
         self.intercept_ -= np.dot(self.xbar_, self.coef_.T)

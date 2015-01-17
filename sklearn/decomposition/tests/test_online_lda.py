@@ -19,12 +19,13 @@ def _build_sparse_mtx():
     Create 3 topics and each have 3 words
     """
     n_topics = 3
-    alpha0 = eta0 = 1. / n_topics
+    doc_topic_prior = 1. / n_topics
+    topic_word_prior = 1. / n_topics
     block = n_topics * np.ones((3, 3))
     blocks = [block] * n_topics
     X = block_diag(*blocks)
     X = csr_matrix(X)
-    return n_topics, alpha0, eta0, X
+    return (n_topics, doc_topic_prior, topic_word_prior, X)
 
 
 def test_lda_batch():
@@ -32,9 +33,9 @@ def test_lda_batch():
     Test LDA batch training(`fit` method)
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    random_state=rng)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, random_state=rng)
     lda.fit(X)
 
     correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
@@ -49,10 +50,10 @@ def test_lda_online():
     (same as test_lda_batch)
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    tau=30., random_state=rng)
-
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, learning_offset=30.,
+                                    random_state=rng)
     for i in xrange(3):
         lda.partial_fit(X)
 
@@ -70,10 +71,10 @@ def test_lda_dense_input():
     rng = np.random.RandomState(0)
     X = rng.randint(5, size=(20, 10))
     n_topics = 3
-    alpha0 = eta0 = 1. / n_topics
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0, eta=eta0,
-                                    random_state=rng)
-
+    doc_topic_prior = 1. / n_topics
+    topic_word_prior = 1. / n_topics
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, random_state=rng)
     X_trans = lda.fit_transform(X)
     assert_true((X_trans > 0.0).any())
 
@@ -84,9 +85,9 @@ def test_lda_fit_transform():
     fit_transform and transform result should be the same
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    random_state=rng)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, random_state=rng)
     X_fit = lda.fit_transform(X)
     X_trans = lda.transform(X)
     assert_array_almost_equal(X_fit, X_trans, 4)
@@ -97,9 +98,10 @@ def test_lda_normalize_docs():
     test sum of topic distribution equals to 1 for each doc
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    random_state=rng, normalize_doc=True)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, normalize_doc=True,
+                                    random_state=rng)
     X_fit = lda.fit_transform(X)
     assert_array_almost_equal(X_fit.sum(axis=1), np.ones(X.shape[0]))
 
@@ -107,17 +109,19 @@ def test_lda_normalize_docs():
 @raises(ValueError)
 def test_lda_partial_fit_dim_mismatch():
     """
-    test n_vocab mismatch in partial_fit
+    test `n_vocab` mismatch in `partial_fit`
     """
     rng = np.random.RandomState(0)
     n_topics = rng.randint(3, 6)
-    alpha0 = eta0 = 1. / n_topics
+    doc_topic_prior = 1. / n_topics
+    topic_word_prior = 1. / n_topics
 
     n_col = rng.randint(6, 10)
     X_1 = np.random.randint(4, size=(10, n_col))
     X_2 = np.random.randint(4, size=(10, n_col + 1))
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0, eta=eta0,
-                                    tau=5., n_docs=20, random_state=rng)
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, learning_offset=5.,
+                                    n_docs=20, random_state=rng)
     for X in [X_1, X_2]:
         lda.partial_fit(X)
 
@@ -136,16 +140,18 @@ def test_lda_transform_before_fit():
 @raises(ValueError)
 def test_lda_transform_mismatch():
     """
-    test n_vocab mismatch in fit and transform
+    test `n_vocab` mismatch in fit and transform
     """
     rng = np.random.RandomState(0)
     X = rng.randint(4, size=(20, 10))
     X_2 = rng.randint(4, size=(10, 8))
 
     n_topics = rng.randint(3, 6)
-    alpha0 = eta0 = 1. / n_topics
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha0,
-                                    eta=eta0, random_state=rng)
+    doc_topic_prior = 1. / n_topics
+    topic_word_prior = 1. / n_topics
+
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, random_state=rng)
     lda.partial_fit(X)
     lda.transform(X_2)
 
@@ -156,9 +162,10 @@ def test_lda_multi_jobs():
     Test LDA batch training with multi CPU
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    n_jobs=3, random_state=rng)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, n_jobs=3,
+                                    random_state=rng)
     lda.fit(X)
 
     correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
@@ -173,10 +180,10 @@ def test_lda_online_multi_jobs():
     Test LDA online training with multi CPU
     """
     rng = np.random.RandomState(0)
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    n_jobs=2, tau=5., n_docs=30, random_state=rng)
-
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, n_jobs=2,
+                                    learning_offset=5., n_docs=30, random_state=rng)
     for i in xrange(3):
         lda.partial_fit(X)
 
@@ -186,23 +193,23 @@ def test_lda_online_multi_jobs():
         assert_true(tuple(sorted(top_idx)) in correct_idx_grps)
 
 
-def test_lda_preplexity():
+def test_lda_perplexity():
     """
-    Test LDA preplexity for batch training
-    preplexity should be lower after each iteration
+    Test LDA perplexity for batch training
+    perplexity should be lower after each iteration
     """
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda_1 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                      random_state=0)
-    lda_2 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                      random_state=0)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda_1 = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                      topic_word_prior=topic_word_prior, random_state=0)
+    lda_2 = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                      topic_word_prior=topic_word_prior, random_state=0)
 
     distr_1 = lda_1.fit_transform(X, max_iters=1)
-    prep_1 = lda_1.preplexity(X, distr_1, sub_sampling=False)
+    perp_1 = lda_1.perplexity(X, distr_1, sub_sampling=False)
 
     distr_2 = lda_2.fit_transform(X, max_iters=10)
-    prep_2 = lda_2.preplexity(X, distr_2, sub_sampling=False)
-    assert_greater_equal(prep_1, prep_2)
+    perp_2 = lda_2.perplexity(X, distr_2, sub_sampling=False)
+    assert_greater_equal(perp_1, perp_2)
 
 
 def test_lda_score():
@@ -210,11 +217,11 @@ def test_lda_score():
     Test LDA score for batch training
     score should be higher after each iteration
     """
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda_1 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                      random_state=0)
-    lda_2 = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                      random_state=0)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda_1 = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                      topic_word_prior=topic_word_prior, random_state=0)
+    lda_2 = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                      topic_word_prior=topic_word_prior, random_state=0)
 
     lda_1.fit_transform(X, max_iters=1)
     score_1 = lda_1.score(X)
@@ -224,20 +231,20 @@ def test_lda_score():
     assert_greater_equal(score_2, score_1)
 
 
-def test_lda_score_preplexity():
+def test_lda_score_perplexity():
     """
-    Test the relationship between LDA score and preplexity
+    Test the relationship between LDA score and perplexity
     """
-    n_topics, alpha, eta, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, alpha=alpha, eta=eta,
-                                    random_state=0)
+    n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
+    lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
+                                    topic_word_prior=topic_word_prior, random_state=0)
 
     distr = lda.fit_transform(X, max_iters=10)
-    preplexity_1 = lda.preplexity(X, distr, sub_sampling=False)
+    perplexity_1 = lda.perplexity(X, distr, sub_sampling=False)
 
     score = lda.score(X)
-    preplexity_2 = np.exp(-1. * (score / np.sum(X.data)))
-    assert_almost_equal(preplexity_1, preplexity_2)
+    perplexity_2 = np.exp(-1. * (score / np.sum(X.data)))
+    assert_almost_equal(perplexity_1, perplexity_2)
 
 
 if __name__ == '__main__':

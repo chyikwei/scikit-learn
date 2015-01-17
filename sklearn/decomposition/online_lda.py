@@ -27,31 +27,80 @@ from ._online_lda import (mean_change, _dirichlet_expectation_1d,
                           _dirichlet_expectation_2d)
 
 
-def _dirichlet_expectation(alpha):
+def _dirichlet_expectation(X):
     """
-    For a vector theta ~ Dir(alpha), computes E[log(theta)] given alpha.
+    For an array theta ~ Dir(X), computes `E[log(theta)]` given X.
+
+    Parameters
+    ----------
+    X : array-like
+        1 or 2 dimention vector
+
+    Returns
+    -------
+    dirichlet_expect: array-like
+        Dirichlet expectation of input array X
     """
-    if len(alpha.shape) == 1:
-        ret = _dirichlet_expectation_1d(alpha)
+
+    if len(X.shape) == 1:
+        dirichlet_expect = _dirichlet_expectation_1d(X)
     else:
-        ret = _dirichlet_expectation_2d(alpha)
-    return ret
+        dirichlet_expect = _dirichlet_expectation_2d(X)
+    return dirichlet_expect
 
 
-def _update_gamma(X, expElogbeta, alpha, rng, max_iters,
-                  mean_change_tol, cal_delta):
+def _update_doc_distribution(X, exp_topic_word_distr, doc_topic_prior, rng, max_iters,
+                             mean_change_tol, cal_diff):
     """
-    E-step: update latent variable gamma
+    E-step: update document topic distribution.
+    (In literature, it is latent variable `gamma`)
+
+    Parameters
+    ----------
+    X : sparse matrix, shape = [n_docs, n_vocabs]
+        Document word matrix.
+
+    exp_topic_word_distr : dense matrrix, shape = [n_topics, n_vocabs]
+        Exponential value of expection of log topic word distribution.
+        In literature, it is `exp(E[log(beta)])`.
+
+    doc_topic_prior : float
+        Prior of document topic distribution `theta`.
+
+    rng : int or RandomState instance or None, optional (default: None)
+        Pseudo Random Number generator seed control.
+
+    max_iters : int
+        Max number of iterations for updating document topic distribution in E-step.
+
+    mean_change_tol : float
+        Stopping tolerance for updating document topic distribution in E-setp.
+
+    cal_diff : boolean
+        Parameter that indicate to calculate differene in `component_` or not.
+        Set `cal_diff` to `True` when we need to run M-step.
+
+    Returns
+    -------
+    (doc_topic_distr, component_diff) :
+        `doc_topic_distr` is unnormailzed topic distribution for each document.
+        In literature, it is `gamma` latent variable. we can calcuate `E[log(theta)]`
+        from it.
+        `component_diff` is the difference of `component_` when `cal_diff` is True.
+        Otherwise, it is None.
+
     """
 
     n_docs, n_vocabs = X.shape
-    n_topics = expElogbeta.shape[0]
+    n_topics = exp_topic_word_distr.shape[0]
 
-    # gamma is non-normailzed topic distribution
-    gamma = rng.gamma(100., 1. / 100., (n_docs, n_topics))
-    expElogtheta = np.exp(_dirichlet_expectation(gamma))
-    # diff on component (only calculate it when keep_comp_change is True)
-    delta_component = np.zeros(expElogbeta.shape) if cal_delta else None
+    # this is variable `gamma` in literature
+    doc_topic_distr = rng.gamma(100., 1. / 100., (n_docs, n_topics))
+    # this is `exp(E[log(theta)])` in literature
+    exp_doc_topic = np.exp(_dirichlet_expectation(doc_topic_distr))
+
+    # diff on `component_` (only calculate it when `cal_diff` is True)
+    component_diff = np.zeros(exp_topic_word_distr.shape) if cal_diff else None
 
     X_data = X.data
     X_indices = X.indices
@@ -60,34 +109,35 @@ def _update_gamma(X, expElogbeta, alpha, rng, max_iters,
     for d in xrange(n_docs):
         ids = X_indices[X_indptr[d]:X_indptr[d + 1]]
         cnts = X_data[X_indptr[d]:X_indptr[d + 1]]
-        gammad = gamma[d, :]
-        expElogthetad = expElogtheta[d, :]
-        expElogbetad = expElogbeta[:, ids]
-        # The optimal phi_{dwk} is proportional to
-        # expElogthetad_k * expElogbetad_w. phinorm is the normalizer.
-        phinorm = np.dot(expElogthetad, expElogbetad) + 1e-100
 
-        # Iterate between gamma and phi until convergence
+        doc_topic_d = doc_topic_distr[d, :]
+        exp_doc_topic_d = exp_doc_topic[d, :]
+        exp_topic_word_d = exp_topic_word_distr[:, ids]
+
+        # The optimal phi_{dwk} is proportional to 
+        # exp(E[log(theta_{dk})]) * exp(E[log(beta_{dw})]).
+        norm_phi = np.dot(exp_doc_topic_d, exp_topic_word_d) + 1e-100
+
+        # Iterate between `doc_topic_d` and `norm_phi` until convergence
         for it in xrange(0, max_iters):
-            lastgamma = gammad
-            # We represent phi implicitly to save memory and time.
-            # Substituting the value of the optimal phi back into
-            # the update for gamma gives this update. Cf. Lee&Seung 2001.
-            gammad = alpha + expElogthetad * \
-                np.dot(cnts / phinorm, expElogbetad.T)
-            expElogthetad = np.exp(_dirichlet_expectation(gammad))
-            phinorm = np.dot(expElogthetad, expElogbetad) + 1e-100
+            last_d = doc_topic_d
 
-            meanchange = mean_change(lastgamma, gammad)
-            if (meanchange < mean_change_tol):
+            doc_topic_d = doc_topic_prior + exp_doc_topic_d * \
+                np.dot(cnts / norm_phi, exp_topic_word_d.T)
+            exp_doc_topic_d = np.exp(_dirichlet_expectation(doc_topic_d))
+            norm_phi = np.dot(exp_doc_topic_d, exp_topic_word_d) + 1e-100
+
+            meanchange = mean_change(last_d, doc_topic_d)
+            if meanchange < mean_change_tol:
                 break
-        gamma[d, :] = gammad
+        doc_topic_distr[d, :] = doc_topic_d
+
         # Contribution of document d to the expected sufficient
         # statistics for the M step.
-        if cal_delta:
-            delta_component[:, ids] += np.outer(expElogthetad, cnts / phinorm)
+        if cal_diff:
+            component_diff[:, ids] += np.outer(exp_doc_topic_d, cnts / norm_phi)
 
-    return (gamma, delta_component)
+    return (doc_topic_distr, component_diff)
 
 
 class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
@@ -107,53 +157,53 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     Parameters
     ----------
     n_topics : int, optional (default: 10)
-        number of topics.
+        Number of topics.
 
-    alpha : float, optional (defalut: 0.1)
-        Hyperparameter for prior on weight vectors theta. In general, it is `1 / n_topics`.
+    doc_topic_prior : float, optional (defalut: 0.1)
+        Prior of document topic distribution `theta`. In general, it is `1 / n_topics`.
+        In literature, it is Hyperparameter parameter `alpha`.
 
-    eta : float, optional (default: 0.1)
-        Hyperparameter for prior on topics beta. In general, it is `1 / n_topics`.
+    topic_word_prior : float, optional (default: 0.1)
+        Prior of topic word distribution `beta`. In general, it is `1 / n_topics`.
+        In literature, it is hyperparameter parameter `eta`.
 
-    kappa : float, optional (default: 0.7)
-        weight for _component: it controls the weight for previous value of _component.
-        The value hould be between (0.5, 1.0] to guarantee asymptotic convergence for online learning.
-        It is only used in partial_fit.
-        When we set kappa to 0.0 and batch_size to n_docs, then the udpate is batch VB.
+    learning_decay : float, optional (default: 0.7)
+        It is a parameter that control learning weight for `_component` in online learning.
+        The value should be set between (0.5, 1.0] to guarantee asymptotic convergence.
+        When the value is 0.0 and batch_size is `n_docs`, the udpate is same as batch learning.
+        In literature, it is parameter `kappa`.
 
-    tau : float, optional (default: 1024.)
-        A (positive) learning parameter that downweights early iterations. It should be greater than 1.0.
-        It is only used in partial_fit
+    learning_offset : float, optional (default: 1000.)
+        A (positive) parameter that downweights early iterations in online learning.
+        It should be greater than 1.0. In literature, it is parameter `tau0`.        
 
     n_docs : int, optional (default: 1e6)
-        Total umber of document. It is only used in online learing(partial_fit).
-        In batch learning, n_docs is X.shape[0]
+        Total umber of document. It is only used in online learing.
+        In batch learning, n_docs is set to X.shape[0]
 
     batch_size : int, optional (default: 128)
         Number of document to udpate in each EM-step
 
     evaluate_every : int optional (default: 5)
-        How many iterations to evaluate preplexity once. Only used in batch learning yet.
-        set it to -1 to not evalute preplexity in training at all.
+        How many iterations to evaluate perplexity once. Only used in batch learning yet.
+        set it to -1 to not evalute perplexity in training at all.
+        Evaluating perplexity in every iteration will increase training time up to 2X.
 
     normalize_doc : boolean, optional (default: False)
-        normalize the topic distribution for transformed document or not.
-        if True, sum of topic distribution for each document will be 1.0
+        Normalize the topic distribution for each document or not.
+        If `True`, sum of topic distribution will be 1.0 for each document.
 
-    e_step_tol : float, optional (default: 1e-4)
-        Tolerance value used in e-step break conditions.
-
-    prex_tol : float, optional (default: 1e-1)
-        Tolerance value used in preplexity break conditions.
+    perp_tol : float, optional (default: 1e-1)
+        Perplexity tolerance in batch learning.
 
     mean_change_tol : float, optional (default: 1e-3)
-        Tolerance value used in e-step break conditions.
+        Stopping tolerance for updating document topic distribution in E-setp.
 
-    max_gamma_update_iter : int (default: 100)
-        Max number of iterations for updating gamma values.
+    max_doc_update_iter : int (default: 100)
+        Max number of iterations for updating document topic distribution in E-step.
 
     n_jobs : int, optional (default: 1)
-        Number of parallel jobs to run on e-step. -1 for autodetect.
+        Number of parallel jobs to run in E-step. -1 for autodetect.
 
     verbose : int, optional (default: 0)
         Verbosity level.
@@ -165,56 +215,76 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     Attributes
     ----------
     components_ : array, [n_topics, n_vocabs]
-        vocab distribution for each topic. components_[i, j] represents
-        vocab `j` in topic `i`
+        Topic word distribution. components_[i, j] represents word `j` in topic `i`.
+        In literature, it is latent parameter `lambda`, and we can calcuate 
+        `E[log(beta)]` from it.
 
     n_iter_ : int
-        number of iteration
+        Number of iteration.
 
     """
 
-    def __init__(self, n_topics=10, alpha=.1, eta=.1, kappa=.7, tau=1000.,
-                 batch_size=128, evaluate_every=5, n_docs=1e6, normalize_doc=False,
-                 e_step_tol=1e-3, prex_tol=1e-1, mean_change_tol=1e-3,
-                 max_gamma_update_iter=100, n_jobs=1, verbose=0, random_state=None):
+    def __init__(self, n_topics=10, doc_topic_prior=.1, topic_word_prior=.1,
+                 learning_decay=.7, learning_offset=1000., batch_size=128,
+                 evaluate_every=5, n_docs=1e6, normalize_doc=False,
+                 perp_tol=1e-1, mean_change_tol=1e-3, max_doc_update_iter=100,
+                 n_jobs=1, verbose=0, random_state=None):
         self.n_topics = n_topics
-        self.alpha = alpha
-        self.eta = eta
-        self.kappa = kappa
-        self.tau = tau
+        self.doc_topic_prior = doc_topic_prior
+        self.topic_word_prior = topic_word_prior
+        self.learning_decay = learning_decay
+        self.learning_offset = learning_offset
         self.batch_size = batch_size
         self.evaluate_every = evaluate_every
         self.n_docs = n_docs
         self.normalize_doc = normalize_doc
-        self.e_step_tol = e_step_tol
-        self.prex_tol = prex_tol
+        self.perp_tol = perp_tol
         self.mean_change_tol = mean_change_tol
-        self.max_gamma_update_iter = max_gamma_update_iter
+        self.max_doc_update_iter = max_doc_update_iter
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
 
     def _init_latent_vars(self, n_vocabs):
         """
-        initialize latent variables
+        Initialize latent variables.
         """
         self.rng = check_random_state(self.random_state)
         self.n_iter_ = 1
         self.n_vocabs = n_vocabs
         init_gamma = 100.
         init_var = 1. / init_gamma
+
+        # In literature, this is variable `lambda`
         self.components_ = self.rng.gamma(
             init_gamma, init_var, (self.n_topics, n_vocabs))
+        # In literature, this is `E[log(beta)]`
+        self.dirichlet_component_ = _dirichlet_expectation(self.components_)
+        # In literature, this is `exp(E[log(beta)])`
+        self.exp_dirichlet_component_ = np.exp(self.dirichlet_component_)
 
-        self.Elogbeta = _dirichlet_expectation(self.components_)
-        self.expElogbeta = np.exp(self.Elogbeta)
-
-    def _e_step(self, X, cal_delta):
+    def _e_step(self, X, cal_diff):
         """
         E-step
 
-        set `cal_delta == True` when we need to run _m_step
-        for inference, set it to False
+        parameters
+        ----------
+        X : sparse matrix, shape = [n_docs, n_vocabs]
+            Document word matrix.
+
+        cal_diff : boolean
+            parameter that indicate to calculate differene in `component_` or not.
+            Set `cal_diff` to `True` when we need to run M-step.
+
+    Returns
+    -------
+    (doc_topic_distr, component_diff) :
+        `doc_topic_distr` is unnormailzed topic distribution for each document.
+        In literature, it is `gamma` variable. we can calcuate `E[log(theta)]`
+        from it.
+        `component_diff` is the difference of `component_` when `cal_diff == True`.
+        Otherwise, it is None.
+
         """
 
         # parell run e-step
@@ -224,28 +294,25 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
             n_jobs = self.n_jobs
 
         results = Parallel(n_jobs=n_jobs, verbose=self.verbose)(
-            delayed(_update_gamma)
-            (X[idx_slice, :], self.expElogbeta, self.alpha,
-             self.rng, self.max_gamma_update_iter, self.mean_change_tol, cal_delta)
+            delayed(_update_doc_distribution)
+            (X[idx_slice, :], self.exp_dirichlet_component_, self.doc_topic_prior,
+             self.rng, self.max_doc_update_iter, self.mean_change_tol, cal_diff)
             for idx_slice in gen_even_slices(X.shape[0], n_jobs))
 
         # merge result
-        gammas, deltas = zip(*results)
-        gamma = np.vstack(gammas)
+        doc_topics, comp_diffs = zip(*results)
+        doc_topic_distr = np.vstack(doc_topics)
 
-        if cal_delta:
-            # This step finishes computing the sufficient statistics for the
-            # M step, so that
-            # sstats[k, w] = \sum_d n_{dw} * phi_{dwk}
-            # = \sum_d n_{dw} * exp{Elogtheta_{dk} + Elogbeta_{kw}} / phinorm_{dw}.
-            delta_component = np.zeros(self.components_.shape)
-            for delta in deltas:
-                delta_component += delta
-            delta_component *= self.expElogbeta
+        if cal_diff:
+            # This step finishes computing the sufficient statistics for the M step
+            component_diff = np.zeros(self.components_.shape)
+            for comp_diff in comp_diffs:
+                component_diff += comp_diff
+            component_diff *= self.exp_dirichlet_component_
         else:
-            delta_component = None
+            component_diff = None
 
-        return (gamma, delta_component)
+        return (doc_topic_distr, component_diff)
 
     def _em_step(self, X, batch_update):
         """
@@ -254,29 +321,39 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         parameters
         ----------
-        X :  sparse matrix
+        X : sparse matrix, shape = [n_docs, n_vocabs]
+            Document word matrix.
 
         batch_update : boolean
-        """
-        # e-step
-        gamma, delta_component = self._e_step(X, cal_delta=True)
+            parameter that control updating method.
+            `True` for batch learning, `False` for online learning
 
-        # m-step
+        Returns
+        -------
+        doc_topic_distr : array, shape = [n_docs, n_topics]
+            Unnormailzed document topic distribution.
+        """
+
+        # E-step
+        doc_topic_distr, component_diff = self._e_step(X, cal_diff=True)
+
+        # M-step
         if batch_update:
-            self.components_ = self.eta + delta_component
+            self.components_ = self.topic_word_prior + component_diff
         else:
             # online update
-            rhot = np.power(self.tau + self.n_iter_, -self.kappa)
+            # In literature, the weight is `rho`
+            weight = np.power(self.learning_offset + self.n_iter_, -self.learning_decay)
             doc_ratio = float(self.n_docs) / X.shape[0]
-            self.components_ *= (1 - rhot)
-            self.components_ += (rhot *
-                                 (self.eta + doc_ratio * delta_component))
+            self.components_ *= (1 - weight)
+            self.components_ += (weight *
+                                 (self.topic_word_prior + doc_ratio * component_diff))
 
-        self.Elogbeta = _dirichlet_expectation(self.components_)
-        self.expElogbeta = np.exp(self.Elogbeta)
+        # update `component_` related variables 
+        self.dirichlet_component_ = _dirichlet_expectation(self.components_)
+        self.exp_dirichlet_component_ = np.exp(self.dirichlet_component_)
         self.n_iter_ += 1
-
-        return gamma
+        return doc_topic_distr
 
     def _to_csr(self, X):
         """
@@ -285,7 +362,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         parameters
         ----------
         X :  array-like
-
+        
         """
         X = check_array(X, accept_sparse='csr')
         if not sp.issparse(X):
@@ -300,16 +377,17 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         Parameters
         ----------
         X : array or sparse matrix, shape = [n_docs, n_vocabs]
-            Data matrix to be transformed by the model
+            Document word matrix.
 
         max_iters : int, (default: 10)
             Max number of iterations
 
         Returns
         -------
-        gamma : array, [n_dics, n_topics]
-            Topic distribution for each doc
+        doc_topic_distr : array, [n_docs, n_topics]
+            Topic distribution for each document.
         """
+
         X = self._to_csr(X)
         return self.fit(X, max_iters).transform(X)
 
@@ -319,8 +397,8 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
-            Data matrix to be decomposed
+        X : array or sparse matrix, shape = [n_docs, n_vocabs]
+            Document word matrix.
 
         Returns
         -------
@@ -346,14 +424,14 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     def fit(self, X, y=None, max_iters=10):
         """
-        Learn model from X. This function is for batch learning.
-        So it will override the old _component variables
+        Learn model from X. This function is for batch learning,
+        so it will override the old _component variables.
 
         Parameters
         ----------
-        X : sparse matrix, shape = (n_docs, n_vocabs)
-            Data matrix to be transformed by the model
-
+        X : sparse matrix, shape = [n_docs, n_vocabs]
+            Document word matrix.
+        
         max_iters : int, (default: 10)
             Max number of iterations
 
@@ -369,17 +447,17 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         # initialize parameters
         self._init_latent_vars(n_vocabs)
 
-        # change to preplexity later
+        # change to perplexity later
         last_bound = None
         for i in xrange(max_iters):
-            gamma = self._em_step(X, batch_update=True)
-            # check preplexity
+            doc_topics = self._em_step(X, batch_update=True)
+            # check perplexity
             if evaluate_every > 0 and (i + 1) % evaluate_every == 0:
-                bound = self.preplexity(X, gamma, sub_sampling=False)
+                bound = self.perplexity(X, doc_topics, sub_sampling=False)
                 if self.verbose:
-                    print('iteration: %d, preplexity: %.4f' % (i + 1, bound))
+                    print('iteration: %d, perplexity: %.4f' % (i + 1, bound))
 
-                if last_bound and abs(last_bound - bound) < self.prex_tol:
+                if last_bound and abs(last_bound - bound) < self.perp_tol:
                     break
                 last_bound = bound
 
@@ -387,21 +465,21 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         """
-        Transform the data X according to the fitted model (run inference)
+        Transform data X according to the fitted model.
 
         Parameters
         ----------
         X : sparse matrix, shape = [n_docs, n_vocabs]
-            Data matrix to be transformed by the model
-            n_vacabs must be the same as n_vocabs in fitted model
+            Document word matrix.
+            `n_vocabs` must be the same as `self.n_vocabs`
 
         max_iters : int, (default: 20)
-            Max number of iterations
+            Max number of iterations.
 
         Returns
         -------
-        data : array, [n_docs, n_topics]
-            Document distribution
+        doc_topic_distr : array, [n_docs, n_topics]
+            Document topic distribution for X.
         """
 
         X = self._to_csr(X)
@@ -409,44 +487,46 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         if not hasattr(self, 'components_'):
             raise NotFittedError(
-                "no 'components_' attr in model. Please fit model first.")
-        # make sure vocabulary size is the same in fitted model and new doc
+                "no 'components_' attribute in model. Please fit model first.")
+        # make sure word size is the same in fitted model and new doc
         # matrix
         if n_vocabs != self.n_vocabs:
             raise ValueError(
                 "feature dimension(vocabulary size) does not match.")
 
-        gamma, _ = self._e_step(X, False)
+        doc_topic_distr, _ = self._e_step(X, False)
 
         if self.normalize_doc:
-            gamma /= gamma.sum(axis=1)[:, np.newaxis]
-        return gamma
+            doc_topic_distr /= doc_topic_distr.sum(axis=1)[:, np.newaxis]
+        return doc_topic_distr
 
-    def _approx_bound(self, X, gamma, sub_sampling):
+    def _approx_bound(self, X, doc_topic_distr, sub_sampling):
         """
-        calculate approximate bound for data X and topic distribution gamma
+        Calculate approximate bound for data X and document topic distribution
         Since log-likelihood cannot be computed directly, we use this bound
         estimate it.
 
         Parameters
         ----------
         X : sparse matrix, [n_docs, n_vocabs]
+            Document word matrix.
 
-        gamma : array, shape = [n_docs, n_topics]
-            document distribution (can be either normalized & un-normalized)
+        doc_topic_distr : array, shape = [n_docs, n_topics]
+            Document topic distribution. In literature, it is `gamma`.
 
         sub_sampling : boolean, optional, (default: False)
-            Compensate for the subsampling of the population of documents
-            set subsampling to `True` for online learning
+            Compensate for subsampling of documents.
+            It is used in calcuate bound in online learning.
 
         Returns
         -------
-        score : float, score of gamma
+        score : float
+
         """
         X = self._to_csr(X)
-        n_docs, n_topics = gamma.shape
+        n_docs, n_topics = doc_topic_distr.shape
         score = 0
-        Elogtheta = _dirichlet_expectation(gamma)
+        dirichlet_doc_topic = _dirichlet_expectation(doc_topic_distr)
 
         X_data = X.data
         X_indices = X.indices
@@ -457,24 +537,24 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
             ids = X_indices[X_indptr[d]:X_indptr[d + 1]]
             cnts = X_data[X_indptr[d]:X_indptr[d + 1]]
             id_length = len(ids)
-            phinorm = np.zeros(id_length)
+            norm_phi = np.zeros(id_length)
             for i in xrange(0, id_length):
-                temp = Elogtheta[d, :] + self.Elogbeta[:, ids[i]]
+                temp = dirichlet_doc_topic[d, :] + self.dirichlet_component_[:, ids[i]]
                 tmax = temp.max()
-                phinorm[i] = np.log(np.sum(np.exp(temp - tmax))) + tmax
-            score += np.sum(cnts * phinorm)
+                norm_phi[i] = np.log(np.sum(np.exp(temp - tmax))) + tmax
+            score += np.sum(cnts * norm_phi)
 
-        # E[log p(theta | alpha) - log q(theta | gamma)]
-        score += np.sum((self.alpha - gamma) * Elogtheta)
-        score += np.sum(gammaln(gamma) - gammaln(self.alpha))
+        # compute E[log p(theta | alpha) - log q(theta | gamma)]
+        score += np.sum((self.doc_topic_prior - doc_topic_distr) * dirichlet_doc_topic)
+        score += np.sum(gammaln(doc_topic_distr) - gammaln(self.doc_topic_prior))
         score += np.sum(
-            gammaln(self.alpha * self.n_topics) - gammaln(np.sum(gamma, 1)))
+            gammaln(self.doc_topic_prior * self.n_topics) - gammaln(np.sum(doc_topic_distr, 1)))
 
         # Compensate for the subsampling of the population of documents
         # E[log p(beta | eta) - log q (beta | lambda)]
-        score += np.sum((self.eta - self.components_) * self.Elogbeta)
-        score += np.sum(gammaln(self.components_) - gammaln(self.eta))
-        score += np.sum(gammaln(self.eta * self.n_vocabs)
+        score += np.sum((self.topic_word_prior - self.components_) * self.dirichlet_component_)
+        score += np.sum(gammaln(self.components_) - gammaln(self.topic_word_prior))
+        score += np.sum(gammaln(self.topic_word_prior * self.n_vocabs)
                         - gammaln(np.sum(self.components_, 1)))
 
         # Compensate for the subsampling of the population of documents
@@ -491,37 +571,40 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         Parameters
         ----------
         X : sparse matrix, shape = [n_docs, n_vocabs]
+             Document word matrix.
 
         Returns
         -------
         score : float
-            use approximate bound as score
+            Use approximate bound as score.
         """
 
         X = self._to_csr(X)
-        gamma = self.transform(X)
-        score = self._approx_bound(X, gamma, sub_sampling=False)
+        doc_topic_distr = self.transform(X)
+        score = self._approx_bound(X, doc_topic_distr, sub_sampling=False)
         return score
 
-    def preplexity(self, X, gamma, sub_sampling=False):
+    def perplexity(self, X, doc_topic_distr, sub_sampling=False):
         """
-        calculate approximate preplexity for data X and topic distribution gamma
-        preplexity is defined as exp(-1. * log-likelihood per word)
+        calculate approximate perplexity for data X and topic distribution `gamma`.
+        Perplexity is defined as exp(-1. * log-likelihood per word)
 
         Parameters
         ----------
         X : sparse matrix, [n_docs, n_vocabs]
+            Document word matrix.
 
-        gamma : array, shape = [n_docs, n_topics]
-            document distribution (can be either normalized & un-normalized)
+        doc_topic_distr : array, shape = [n_docs, n_topics]
+            Document topic distribution.
 
         Returns
         -------
-        score : float, score of gamma
+        score : float
+            Perplexity score.
         """
         X = self._to_csr(X)
         n_doc = X.shape[0]
-        bound = self._approx_bound(X, gamma, sub_sampling)
+        bound = self._approx_bound(X, doc_topic_distr, sub_sampling)
         perword_bound = bound / np.sum(X.data)
 
         if sub_sampling:

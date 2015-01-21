@@ -479,8 +479,6 @@ def check_classifiers_train(name, Classifier):
         if name in ['BernoulliNB', 'MultinomialNB']:
             X -= X.min()
         set_fast_parameters(classifier)
-        set_random_state(classifier)
-
         # raises error on malformed input for fit
         assert_raises(ValueError, classifier.fit, X, y[:-1])
 

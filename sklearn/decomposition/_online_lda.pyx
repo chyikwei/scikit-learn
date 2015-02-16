@@ -1,13 +1,22 @@
 cimport cython
 cimport numpy as np
 import numpy as np
+from libc.math cimport fabs
+from scipy.special import psi
 
 np.import_array()
 
 cdef np.float64_t NEGINF = -np.inf
 
-from libc.math cimport fabs
-from scipy.special import psi
+
+cdef extern from "digamma.h":
+    cdef double digamma(double x)
+
+
+cdef double lda_digamma(double x):
+       if x <= 0:
+           raise ValueError("x must be strictly positive, got %f" % x)
+       return digamma(x)
 
 
 @cython.boundscheck(False)
@@ -69,5 +78,49 @@ def _dirichlet_expectation_2d(np.ndarray[ndim=2, dtype=np.float64_t] arr):
     for i in range(n_row):
         for j in range(n_col):
             d_exp[i, j] -= psi_row[i]
+
+    return d_exp
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def _dirichlet_expectation_1d_fast(np.ndarray[ndim=1, dtype=np.float64_t] arr):
+    cdef np.float64_t total, psi_total
+    cdef np.ndarray[ndim=1, dtype=np.float64_t] d_exp
+    cdef np.npy_intp i, size
+
+    size = arr.shape[0]
+    d_exp = np.empty(size, dtype=np.float64)
+    total = 0.0
+    for i in range(size):
+        total += arr[i]
+    psi_total = lda_digamma(total)
+
+    for i in range(size):
+        d_exp[i] = lda_digamma(arr[i]) - psi_total
+
+    return d_exp
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def _dirichlet_expectation_2d_fast(np.ndarray[ndim=2, dtype=np.float64_t] arr):
+    cdef np.float64_t total, psi_total
+    cdef np.ndarray[ndim=2, dtype=np.float64_t] d_exp
+    cdef np.ndarray[ndim=1, dtype=np.float64_t] psi_row
+    cdef np.npy_intp i, j, n_row, n_col
+
+    n_row = arr.shape[0]
+    n_col = arr.shape[1]
+    d_exp = np.empty((n_row, n_col), dtype=np.float64)
+    psi_row = np.zeros(n_row, dtype=np.float64)
+    for i in range(n_row):
+        for j in range(n_col):
+            psi_row[i] += arr[i, j]
+        psi_row[i] = lda_digamma(psi_row[i])
+
+    for i in range(n_row):
+        for j in range(n_col):
+            d_exp[i, j] = lda_digamma(arr[i, j]) - psi_row[i]
 
     return d_exp

@@ -11,8 +11,8 @@ def configuration(parent_package="", top_path=None):
         libraries.append('m')
 
     config.add_extension("_online_lda",
-                         sources=["_online_lda.c"],
-                         include_dirs=[numpy.get_include()],
+                         sources=["_online_lda.c", "digamma.c"],
+                         include_dirs=[".", numpy.get_include()],
                          libraries=libraries)
 
     config.add_subpackage("tests")

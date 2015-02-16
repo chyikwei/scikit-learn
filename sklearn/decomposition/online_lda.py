@@ -23,8 +23,8 @@ from ..utils.validation import NotFittedError
 from ..externals.joblib import Parallel, delayed, cpu_count
 from ..externals.six.moves import xrange
 
-from ._online_lda import (mean_change, _dirichlet_expectation_1d,
-                          _dirichlet_expectation_2d)
+from ._online_lda import (mean_change, _dirichlet_expectation_1d_fast,
+                          _dirichlet_expectation_2d_fast)
 
 
 def _dirichlet_expectation(X):
@@ -43,9 +43,9 @@ def _dirichlet_expectation(X):
     """
 
     if len(X.shape) == 1:
-        dirichlet_expect = _dirichlet_expectation_1d(X)
+        dirichlet_expect = _dirichlet_expectation_1d_fast(X)
     else:
-        dirichlet_expect = _dirichlet_expectation_2d(X)
+        dirichlet_expect = _dirichlet_expectation_2d_fast(X)
     return dirichlet_expect
 
 

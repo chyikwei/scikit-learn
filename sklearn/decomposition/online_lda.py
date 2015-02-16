@@ -57,10 +57,10 @@ def _update_doc_distribution(X, exp_topic_word_distr, doc_topic_prior, rng, max_
 
     Parameters
     ----------
-    X : sparse matrix, shape = [n_docs, n_vocabs]
+    X : sparse matrix, shape = [n_samples, n_features]
         Document word matrix.
 
-    exp_topic_word_distr : dense matrrix, shape = [n_topics, n_vocabs]
+    exp_topic_word_distr : dense matrrix, shape = [n_topics, n_features]
         Exponential value of expection of log topic word distribution.
         In literature, it is `exp(E[log(beta)])`.
 
@@ -91,11 +91,11 @@ def _update_doc_distribution(X, exp_topic_word_distr, doc_topic_prior, rng, max_
 
     """
 
-    n_docs, n_vocabs = X.shape
+    n_samples, n_features = X.shape
     n_topics = exp_topic_word_distr.shape[0]
 
     # this is variable `gamma` in literature
-    doc_topic_distr = rng.gamma(100., 1. / 100., (n_docs, n_topics))
+    doc_topic_distr = rng.gamma(100., 1. / 100., (n_samples, n_topics))
     # this is `exp(E[log(theta)])` in literature
     exp_doc_topic = np.exp(_dirichlet_expectation(doc_topic_distr))
 
@@ -106,7 +106,7 @@ def _update_doc_distribution(X, exp_topic_word_distr, doc_topic_prior, rng, max_
     X_indices = X.indices
     X_indptr = X.indptr
 
-    for d in xrange(n_docs):
+    for d in xrange(n_samples):
         ids = X_indices[X_indptr[d]:X_indptr[d + 1]]
         cnts = X_data[X_indptr[d]:X_indptr[d + 1]]
 
@@ -170,16 +170,16 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
     learning_decay : float, optional (default: 0.7)
         It is a parameter that control learning weight for `_component` in online learning.
         The value should be set between (0.5, 1.0] to guarantee asymptotic convergence.
-        When the value is 0.0 and batch_size is `n_docs`, the udpate is same as batch learning.
+        When the value is 0.0 and batch_size is `n_samples`, the udpate is same as batch learning.
         In literature, it is parameter `kappa`.
 
     learning_offset : float, optional (default: 1000.)
         A (positive) parameter that downweights early iterations in online learning.
         It should be greater than 1.0. In literature, it is parameter `tau0`.        
 
-    n_docs : int, optional (default: 1e6)
+    n_samples : int, optional (default: 1e6)
         Total umber of document. It is only used in online learing.
-        In batch learning, n_docs is set to X.shape[0]
+        In batch learning, n_samples is set to X.shape[0]
 
     batch_size : int, optional (default: 128)
         Number of document to udpate in each EM-step
@@ -214,7 +214,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     Attributes
     ----------
-    components_ : array, [n_topics, n_vocabs]
+    components_ : array, [n_topics, n_features]
         Topic word distribution. components_[i, j] represents word `j` in topic `i`.
         In literature, it is latent parameter `lambda`, and we can calcuate 
         `E[log(beta)]` from it.
@@ -226,7 +226,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
     def __init__(self, n_topics=10, doc_topic_prior=.1, topic_word_prior=.1,
                  learning_decay=.7, learning_offset=1000., batch_size=128,
-                 evaluate_every=5, n_docs=1e6, normalize_doc=False,
+                 evaluate_every=5, n_samples=1e6, normalize_doc=False,
                  perp_tol=1e-1, mean_change_tol=1e-3, max_doc_update_iter=100,
                  n_jobs=1, verbose=0, random_state=None):
         self.n_topics = n_topics
@@ -236,7 +236,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         self.learning_offset = learning_offset
         self.batch_size = batch_size
         self.evaluate_every = evaluate_every
-        self.n_docs = n_docs
+        self.n_samples = n_samples
         self.normalize_doc = normalize_doc
         self.perp_tol = perp_tol
         self.mean_change_tol = mean_change_tol
@@ -245,19 +245,19 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         self.verbose = verbose
         self.random_state = random_state
 
-    def _init_latent_vars(self, n_vocabs):
+    def _init_latent_vars(self, n_features):
         """
         Initialize latent variables.
         """
         self.rng = check_random_state(self.random_state)
         self.n_iter_ = 1
-        self.n_vocabs = n_vocabs
+        self.n_features = n_features
         init_gamma = 100.
         init_var = 1. / init_gamma
 
         # In literature, this is variable `lambda`
         self.components_ = self.rng.gamma(
-            init_gamma, init_var, (self.n_topics, n_vocabs))
+            init_gamma, init_var, (self.n_topics, n_features))
         # In literature, this is `E[log(beta)]`
         self.dirichlet_component_ = _dirichlet_expectation(self.components_)
         # In literature, this is `exp(E[log(beta)])`
@@ -269,7 +269,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
 
         cal_diff : boolean
@@ -321,7 +321,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
 
         batch_update : boolean
@@ -330,7 +330,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        doc_topic_distr : array, shape = [n_docs, n_topics]
+        doc_topic_distr : array, shape = [n_samples, n_topics]
             Unnormailzed document topic distribution.
         """
 
@@ -344,7 +344,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
             # online update
             # In literature, the weight is `rho`
             weight = np.power(self.learning_offset + self.n_iter_, -self.learning_decay)
-            doc_ratio = float(self.n_docs) / X.shape[0]
+            doc_ratio = float(self.n_samples) / X.shape[0]
             self.components_ *= (1 - weight)
             self.components_ += (weight *
                                  (self.topic_word_prior + doc_ratio * component_diff))
@@ -376,7 +376,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : array or sparse matrix, shape = [n_docs, n_vocabs]
+        X : array or sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
 
         max_iters : int, (default: 10)
@@ -384,7 +384,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        doc_topic_distr : array, [n_docs, n_topics]
+        doc_topic_distr : array, [n_samples, n_topics]
             Topic distribution for each document.
         """
 
@@ -397,7 +397,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : array or sparse matrix, shape = [n_docs, n_vocabs]
+        X : array or sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
 
         Returns
@@ -406,18 +406,18 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         """
 
         X = self._to_csr(X)
-        n_docs, n_vocabs = X.shape
+        n_samples, n_features = X.shape
         batch_size = self.batch_size
 
         # initialize parameters or check
         if not hasattr(self, 'components_'):
-            self._init_latent_vars(n_vocabs)
+            self._init_latent_vars(n_features)
 
-        if n_vocabs != self.n_vocabs:
+        if n_features != self.n_features:
             raise ValueError(
                 "feature dimension(vocabulary size) doesn't match.")
 
-        for idx_slice in gen_batches(n_docs, batch_size):
+        for idx_slice in gen_batches(n_samples, batch_size):
             self._em_step(X[idx_slice, :], batch_update=False)
 
         return self
@@ -429,7 +429,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
         
         max_iters : int, (default: 10)
@@ -441,11 +441,11 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         """
 
         X = self._to_csr(X)
-        n_docs, n_vocabs = X.shape
+        n_samples, n_features = X.shape
         evaluate_every = self.evaluate_every
 
         # initialize parameters
-        self._init_latent_vars(n_vocabs)
+        self._init_latent_vars(n_features)
 
         # change to perplexity later
         last_bound = None
@@ -469,28 +469,28 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_samples, n_features]
             Document word matrix.
-            `n_vocabs` must be the same as `self.n_vocabs`
+            `n_features` must be the same as `self.n_features`
 
         max_iters : int, (default: 20)
             Max number of iterations.
 
         Returns
         -------
-        doc_topic_distr : array, [n_docs, n_topics]
+        doc_topic_distr : array, [n_samples, n_topics]
             Document topic distribution for X.
         """
 
         X = self._to_csr(X)
-        n_docs, n_vocabs = X.shape
+        n_samples, n_features = X.shape
 
         if not hasattr(self, 'components_'):
             raise NotFittedError(
                 "no 'components_' attribute in model. Please fit model first.")
         # make sure word size is the same in fitted model and new doc
         # matrix
-        if n_vocabs != self.n_vocabs:
+        if n_features != self.n_features:
             raise ValueError(
                 "feature dimension(vocabulary size) does not match.")
 
@@ -508,10 +508,10 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, [n_docs, n_vocabs]
+        X : sparse matrix, [n_samples, n_features]
             Document word matrix.
 
-        doc_topic_distr : array, shape = [n_docs, n_topics]
+        doc_topic_distr : array, shape = [n_samples, n_topics]
             Document topic distribution. In literature, it is `gamma`.
 
         sub_sampling : boolean, optional, (default: False)
@@ -524,7 +524,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         """
         X = self._to_csr(X)
-        n_docs, n_topics = doc_topic_distr.shape
+        n_samples, n_topics = doc_topic_distr.shape
         score = 0
         dirichlet_doc_topic = _dirichlet_expectation(doc_topic_distr)
 
@@ -533,7 +533,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         X_indptr = X.indptr
 
         # E[log p(docs | theta, beta)]
-        for d in xrange(0, n_docs):
+        for d in xrange(0, n_samples):
             ids = X_indices[X_indptr[d]:X_indptr[d + 1]]
             cnts = X_data[X_indptr[d]:X_indptr[d + 1]]
             id_length = len(ids)
@@ -554,12 +554,12 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
         # E[log p(beta | eta) - log q (beta | lambda)]
         score += np.sum((self.topic_word_prior - self.components_) * self.dirichlet_component_)
         score += np.sum(gammaln(self.components_) - gammaln(self.topic_word_prior))
-        score += np.sum(gammaln(self.topic_word_prior * self.n_vocabs)
+        score += np.sum(gammaln(self.topic_word_prior * self.n_features)
                         - gammaln(np.sum(self.components_, 1)))
 
         # Compensate for the subsampling of the population of documents
         if sub_sampling:
-            doc_ratio = float(self.n_docs) / n_docs
+            doc_ratio = float(self.n_samples) / n_samples
             score *= doc_ratio
 
         return score
@@ -570,7 +570,7 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, shape = [n_docs, n_vocabs]
+        X : sparse matrix, shape = [n_samples, n_features]
              Document word matrix.
 
         Returns
@@ -591,10 +591,10 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : sparse matrix, [n_docs, n_vocabs]
+        X : sparse matrix, [n_samples, n_features]
             Document word matrix.
 
-        doc_topic_distr : array, shape = [n_docs, n_topics]
+        doc_topic_distr : array, shape = [n_samples, n_topics]
             Document topic distribution.
 
         Returns
@@ -603,11 +603,11 @@ class LatentDirichletAllocation(BaseEstimator, TransformerMixin):
             Perplexity score.
         """
         X = self._to_csr(X)
-        n_doc = X.shape[0]
+        current_samples = X.shape[0]
         bound = self._approx_bound(X, doc_topic_distr, sub_sampling)
         perword_bound = bound / np.sum(X.data)
 
         if sub_sampling:
-            perword_bound = perword_bound * (float(n_doc) / self.n_docs)
+            perword_bound = perword_bound * (float(current_samples) / self.n_samples)
 
         return np.exp(-1.0 * perword_bound)

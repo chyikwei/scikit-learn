@@ -109,7 +109,7 @@ def test_lda_normalize_docs():
 @raises(ValueError)
 def test_lda_partial_fit_dim_mismatch():
     """
-    test `n_vocab` mismatch in `partial_fit`
+    test `n_features` mismatch in `partial_fit`
     """
     rng = np.random.RandomState(0)
     n_topics = rng.randint(3, 6)
@@ -121,7 +121,7 @@ def test_lda_partial_fit_dim_mismatch():
     X_2 = np.random.randint(4, size=(10, n_col + 1))
     lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
                                     topic_word_prior=topic_word_prior, learning_offset=5.,
-                                    n_docs=20, random_state=rng)
+                                    n_samples=20, random_state=rng)
     for X in [X_1, X_2]:
         lda.partial_fit(X)
 
@@ -140,7 +140,7 @@ def test_lda_transform_before_fit():
 @raises(ValueError)
 def test_lda_transform_mismatch():
     """
-    test `n_vocab` mismatch in fit and transform
+    test `n_features` mismatch in fit and transform
     """
     rng = np.random.RandomState(0)
     X = rng.randint(4, size=(20, 10))
@@ -183,7 +183,7 @@ def test_lda_online_multi_jobs():
     n_topics, doc_topic_prior, topic_word_prior, X = _build_sparse_mtx()
     lda = LatentDirichletAllocation(n_topics=n_topics, doc_topic_prior=doc_topic_prior,
                                     topic_word_prior=topic_word_prior, n_jobs=2,
-                                    learning_offset=5., n_docs=30, random_state=rng)
+                                    learning_offset=5., n_samples=30, random_state=rng)
     for i in xrange(3):
         lda.partial_fit(X)
 

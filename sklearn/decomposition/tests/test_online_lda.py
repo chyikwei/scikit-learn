@@ -96,15 +96,16 @@ def test_lda_dense_input():
     # Test LDA with dense input.
     rng = np.random.RandomState(0)
     n_topics, X = _build_sparse_mtx()
-    lda = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch',
-                                    random_state=rng)
-    lda.fit(X.toarray())
 
-    correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
-    for component in lda.components_:
-        # Find top 3 words in each LDA component
-        top_idx = set(component.argsort()[-3:][::-1])
-        assert_true(tuple(sorted(top_idx)) in correct_idx_grps)
+    for X_dense in [X.toarray(), X.todense()]:
+        lda = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch',
+                                        random_state=rng)
+        lda.fit(X_dense)
+        correct_idx_grps = [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
+        for component in lda.components_:
+            # Find top 3 words in each LDA component
+            top_idx = set(component.argsort()[-3:][::-1])
+            assert_true(tuple(sorted(top_idx)) in correct_idx_grps)
 
 
 def test_lda_transform():
